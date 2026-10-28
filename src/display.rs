@@ -35,6 +35,10 @@ use crate::virtual_display::{Mode, VirtualDisplay};
 
 /// QP reported to the client for each region; informational for AVC420.
 const REPORTED_QP: u8 = 22;
+/// Frames sent but not yet acknowledged before the pipeline waits. Windows
+/// App acknowledges a frame only after presenting it, so the default of 3
+/// capped the rate at 3 frames per acknowledgement delay.
+const MAX_FRAMES_IN_FLIGHT: u32 = 8;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DisplayConfig {
@@ -143,6 +147,43 @@ pub struct Shared {
     screen: Arc<ScreenState>,
     /// Exists while a client is connected in `match_client` mode.
     virtual_display: Mutex<Option<VirtualDisplay>>,
+    acks: Mutex<AckStats>,
+}
+
+/// Time from sending a frame to its acknowledgement, for the stats log.
+#[derive(Default)]
+struct AckStats {
+    sent: std::collections::VecDeque<(u32, Instant)>,
+    total: Duration,
+    count: u32,
+}
+
+impl AckStats {
+    fn sent(&mut self, frame_id: u32) {
+        if self.sent.len() >= 64 {
+            self.sent.pop_front();
+        }
+        self.sent.push_back((frame_id, Instant::now()));
+    }
+
+    fn acked(&mut self, frame_id: u32) {
+        if let Some(index) = self.sent.iter().position(|(id, _)| *id == frame_id) {
+            let (_, at) = self.sent.remove(index).expect("index from position");
+            self.total += at.elapsed();
+            self.count += 1;
+        }
+    }
+
+    /// Average acknowledgement delay since the last call, in milliseconds.
+    fn take_average_ms(&mut self) -> f64 {
+        let average = if self.count == 0 {
+            0.0
+        } else {
+            self.total.as_secs_f64() * 1000.0 / f64::from(self.count)
+        };
+        (self.total, self.count) = (Duration::ZERO, 0);
+        average
+    }
 }
 
 impl Shared {
@@ -152,6 +193,7 @@ impl Shared {
             slot: Arc::default(),
             screen,
             virtual_display: Mutex::new(None),
+            acks: Mutex::default(),
         }
     }
 }
@@ -438,6 +480,8 @@ impl Pipeline {
         let mut last: Option<Frame> = None;
         let mut frames: u64 = 0;
         let mut skipped: u64 = 0;
+        let mut stalls: u64 = 0;
+        let mut encode_time = Duration::ZERO;
         let mut bytes: u64 = 0;
         let mut stats_at = Instant::now();
 
@@ -499,6 +543,7 @@ impl Pipeline {
                     need_keyframe = true;
                 }
                 if server.should_backpressure() {
+                    stalls += 1;
                     continue;
                 }
             }
@@ -512,7 +557,10 @@ impl Pipeline {
                 None => continue,
             };
 
-            let encoded = match video.encoder.encode(&frame.0, need_keyframe) {
+            let encode_started = Instant::now();
+            let encoded = video.encoder.encode(&frame.0, need_keyframe);
+            encode_time += encode_started.elapsed();
+            let encoded = match encoded {
                 Ok(Some(encoded)) => encoded,
                 // Rate control skipped it; encode it again unless a newer one
                 // comes, or a still screen would stay stale.
@@ -550,7 +598,10 @@ impl Pipeline {
                         debug!(?err, "frame rejected");
                         need_keyframe = true;
                     }
-                    Ok(_) => need_keyframe = false,
+                    Ok(frame_id) => {
+                        need_keyframe = false;
+                        self.shared.acks.lock().expect("poisoned").sent(frame_id);
+                    }
                 }
                 (server.drain_output(), server.channel_id())
             };
@@ -563,9 +614,19 @@ impl Pipeline {
                     fps = format!("{:.1}", frames as f64 / secs),
                     mbps = format!("{:.2}", bytes as f64 * 8.0 / secs / 1e6),
                     skipped,
+                    stalls,
+                    encode_ms = format!(
+                        "{:.1}",
+                        encode_time.as_secs_f64() * 1000.0 / (frames + skipped).max(1) as f64
+                    ),
+                    ack_ms = format!(
+                        "{:.0}",
+                        self.shared.acks.lock().expect("poisoned").take_average_ms()
+                    ),
                     "video"
                 );
-                (frames, skipped, bytes, stats_at) = (0, 0, 0, Instant::now());
+                (frames, skipped, stalls, bytes, stats_at) = (0, 0, 0, 0, Instant::now());
+                encode_time = Duration::ZERO;
             }
 
             self.send(messages, channel_id)?;
@@ -616,13 +677,13 @@ impl ServerEventSender for GfxFactory {
 impl GfxServerFactory for GfxFactory {
     fn build_gfx_handler(&self, _ctx: GfxContext) -> Box<dyn GraphicsPipelineHandler> {
         Box::new(GfxHandler {
-            slot: Arc::clone(&self.shared.slot),
+            shared: Arc::clone(&self.shared),
         })
     }
 }
 
 struct GfxHandler {
-    slot: Arc<FrameSlot>,
+    shared: Arc<Shared>,
 }
 
 impl GraphicsPipelineHandler for GfxHandler {
@@ -632,11 +693,16 @@ impl GraphicsPipelineHandler for GfxHandler {
 
     fn on_ready(&mut self, negotiated: &CapabilitySet) {
         info!(?negotiated, "EGFX ready");
-        self.slot.poke();
+        self.shared.slot.poke();
     }
 
-    fn on_frame_ack(&mut self, _frame_id: u32, _queue_depth: u32, _total_frames_decoded: u32) {
-        self.slot.poke();
+    fn on_frame_ack(&mut self, frame_id: u32, _queue_depth: u32, _total_frames_decoded: u32) {
+        self.shared.acks.lock().expect("poisoned").acked(frame_id);
+        self.shared.slot.poke();
+    }
+
+    fn max_frames_in_flight(&self) -> u32 {
+        MAX_FRAMES_IN_FLIGHT
     }
 
     fn on_close(&mut self) {
