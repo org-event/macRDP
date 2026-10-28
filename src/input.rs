@@ -3,6 +3,7 @@
 //! Keys arrive as PC scan codes (set 1). The Windows key maps to Command, Alt to
 //! Option, so a client set to send Command as the Windows key gets real Command.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ironrdp_server::{KeyboardEvent, MouseButton, MouseEvent, RdpServerInputHandler};
@@ -13,13 +14,15 @@ use objc2_core_graphics::{
 };
 use tracing::{debug, trace};
 
+use crate::display::ScreenState;
+
 /// Clicks closer than this in time and distance count as a multi-click.
 const MULTI_CLICK_TIME: Duration = Duration::from_millis(500);
 const MULTI_CLICK_DISTANCE: f64 = 4.0;
 
 pub struct MacInput {
-    /// Desktop pixels to display points.
-    scale: f64,
+    /// Maps desktop pixels to global display points.
+    screen: Arc<ScreenState>,
     modifiers: CGEventFlags,
     position: CGPoint,
     pressed: [bool; 5],
@@ -27,9 +30,9 @@ pub struct MacInput {
 }
 
 impl MacInput {
-    pub fn new(scale: f64) -> Self {
+    pub fn new(screen: Arc<ScreenState>) -> Self {
         Self {
-            scale,
+            screen,
             modifiers: CGEventFlags::empty(),
             position: CGPoint::ZERO,
             pressed: [false; 5],
@@ -38,7 +41,11 @@ impl MacInput {
     }
 
     fn point(&self, x: u16, y: u16) -> CGPoint {
-        CGPoint::new(f64::from(x) * self.scale, f64::from(y) * self.scale)
+        let screen = self.screen.get();
+        CGPoint::new(
+            screen.origin.0 + f64::from(x) / screen.scale,
+            screen.origin.1 + f64::from(y) / screen.scale,
+        )
     }
 
     fn post(&self, event: Option<objc2_core_foundation::CFRetained<CGEvent>>) {

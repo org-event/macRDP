@@ -8,6 +8,7 @@ anyhow = "1.0.104"
 async-trait = "0.1.92"
 block2 = "0.6.2"
 dispatch2 = "0.3.1"
+ironrdp-displaycontrol = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.10.0" }
 ironrdp-dvc = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.10.0" }
 ironrdp-egfx = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.5.0" }
 ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.11.0" }

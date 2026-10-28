@@ -26,6 +26,10 @@ use tracing::{error, warn};
 /// `kCVPixelFormatType_420YpCbCr8BiPlanarFullRange`.
 pub const PIXEL_FORMAT_420F: u32 = u32::from_be_bytes(*b"420f");
 
+/// ScreenCaptureKit sometimes never answers a start on a display that was
+/// reconfigured a moment ago; a fresh stream then starts normally.
+const START_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// A captured frame. The pixel buffer is IOSurface-backed and immutable once
 /// delivered, so handing it to another thread is sound.
 pub struct Frame(pub CFRetained<CVPixelBuffer>);
@@ -210,7 +214,7 @@ impl Capture {
                 let _ = tx.send(result);
             });
             stream.startCaptureWithCompletionHandler(Some(&done));
-            rx.recv_timeout(Duration::from_secs(10))
+            rx.recv_timeout(START_TIMEOUT)
                 .context("startCapture timed out")?
                 .map_err(|e| anyhow!("startCapture: {e}"))?;
 
@@ -238,6 +242,17 @@ impl Drop for Capture {
 }
 
 fn find_display(display_id: u32) -> anyhow::Result<Retained<SCDisplay>> {
+    // A display created a moment ago (the virtual one) takes a while to show up.
+    for _ in 0..15 {
+        if let Some(display) = shareable_display(display_id)? {
+            return Ok(display);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    bail!("display {display_id} not found")
+}
+
+fn shareable_display(display_id: u32) -> anyhow::Result<Option<Retained<SCDisplay>>> {
     let (tx, rx) = mpsc::channel();
     let handler =
         block2::RcBlock::new(move |content: *mut SCShareableContent, err: *mut NSError| {
@@ -265,12 +280,9 @@ fn find_display(display_id: u32) -> anyhow::Result<Retained<SCDisplay>> {
 
     // SAFETY: reading properties of a valid SCShareableContent.
     let displays = unsafe { content.displays() };
-    for display in displays.iter() {
-        if unsafe { display.displayID() } == display_id {
-            return Ok(display);
-        }
-    }
-    bail!("display {display_id} not found")
+    Ok(displays
+        .iter()
+        .find(|display| unsafe { display.displayID() } == display_id))
 }
 
 /// Synthetic moving picture in place of the screen, for testing the video path

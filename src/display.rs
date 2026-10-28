@@ -5,13 +5,17 @@
 //! it at any time by advertising capabilities again), and sends one H.264 frame
 //! whenever the client has room for it. Frames that arrive while the client is
 //! behind are coalesced into the newest one.
+//!
+//! With `match_client` the stream comes from a virtual display sized to the
+//! client, and follows the client's window as it is resized (Display Control).
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, anyhow};
+use ironrdp_displaycontrol::pdu::DisplayControlMonitorLayout;
 use ironrdp_egfx::pdu::{Avc420Region, CapabilitiesAdvertisePdu, CapabilitySet};
 use ironrdp_egfx::server::GraphicsPipelineHandler;
 use ironrdp_pdu::gcc::{Monitor, MonitorFlags};
@@ -21,27 +25,63 @@ use ironrdp_server::{
     ServerEventSender, ServerResult,
 };
 use ironrdp_svc::ChannelFlags;
+use objc2_core_graphics::{CGDisplayBounds, CGMainDisplayID};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
 use crate::capture::{Capture, Frame, FrameSlot, TestPattern};
 use crate::encoder::Encoder;
+use crate::virtual_display::{Mode, VirtualDisplay};
 
 /// QP reported to the client for each region; informational for AVC420.
 const REPORTED_QP: u8 = 22;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DisplayConfig {
-    pub display_id: u32,
-    /// Desktop size announced to the client.
-    pub desktop: (u16, u16),
     pub fps: i32,
     pub bitrate: u32,
+    /// Stream physical displays in pixels instead of points.
+    pub hidpi: bool,
+    /// Stream a virtual display sized to the client instead of the main display.
+    pub match_client: bool,
     /// Send a synthetic picture instead of the screen.
     pub test_pattern: bool,
 }
 
-impl DisplayConfig {
+/// The display being streamed and how desktop pixels map to global points.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Screen {
+    pub display_id: u32,
+    /// Desktop size announced to the client, in pixels.
+    pub desktop: (u16, u16),
+    /// Top-left corner in global display coordinates (points).
+    pub origin: (f64, f64),
+    /// Pixels per point.
+    pub scale: f64,
+}
+
+impl Screen {
+    /// Describes `display_id` in pixels (`hidpi`) or points.
+    pub fn of_display(display_id: u32, hidpi: bool) -> anyhow::Result<Self> {
+        let bounds = CGDisplayBounds(display_id);
+        let scale = if hidpi {
+            backing_scale(display_id)
+        } else {
+            1.0
+        };
+        // RDP clients expect an even desktop width and height.
+        let even = |value: f64| u16::try_from(value.round() as i64).map(|v| v & !1);
+        Ok(Self {
+            display_id,
+            desktop: (
+                even(bounds.size.width * scale).context("display too wide")?,
+                even(bounds.size.height * scale).context("display too tall")?,
+            ),
+            origin: (bounds.origin.x, bounds.origin.y),
+            scale,
+        })
+    }
+
     /// Encoded frame size: the desktop rounded up to whole 16x16 macroblocks.
     fn surface(&self) -> (u16, u16) {
         (
@@ -51,49 +91,188 @@ impl DisplayConfig {
     }
 }
 
+fn backing_scale(display_id: u32) -> f64 {
+    let points = CGDisplayBounds(display_id).size.width;
+    let mode = objc2_core_graphics::CGDisplayCopyDisplayMode(display_id);
+    let pixels = objc2_core_graphics::CGDisplayMode::pixel_width(mode.as_deref());
+    if points > 0.0 && pixels > 0 {
+        pixels as f64 / points
+    } else {
+        1.0
+    }
+}
+
+/// The current [`Screen`], shared with input; each change bumps the generation.
+pub struct ScreenState {
+    screen: Mutex<Screen>,
+    generation: AtomicU64,
+}
+
+impl ScreenState {
+    pub fn new(screen: Screen) -> Self {
+        Self {
+            screen: Mutex::new(screen),
+            generation: AtomicU64::new(0),
+        }
+    }
+
+    pub fn get(&self) -> Screen {
+        *self.screen.lock().expect("poisoned")
+    }
+
+    fn snapshot(&self) -> (u64, Screen) {
+        let screen = self.screen.lock().expect("poisoned");
+        (self.generation.load(Ordering::Acquire), *screen)
+    }
+
+    fn set(&self, screen: Screen) {
+        let mut current = self.screen.lock().expect("poisoned");
+        if *current != screen {
+            *current = screen;
+            self.generation.fetch_add(1, Ordering::AcqRel);
+            info!(?screen, "screen changed");
+        }
+    }
+}
+
 /// State shared by the display handler and the EGFX factory.
-#[derive(Default)]
 pub struct Shared {
     events: Mutex<Option<UnboundedSender<ServerEvent>>>,
-    /// Wakes the pipeline on new frames and on EGFX events.
+    /// Wakes the pipeline on new frames, EGFX events and screen changes.
     slot: Arc<FrameSlot>,
+    screen: Arc<ScreenState>,
+    /// Exists while a client is connected in `match_client` mode.
+    virtual_display: Mutex<Option<VirtualDisplay>>,
+}
+
+impl Shared {
+    pub fn new(screen: Arc<ScreenState>) -> Self {
+        Self {
+            events: Mutex::new(None),
+            slot: Arc::default(),
+            screen,
+            virtual_display: Mutex::new(None),
+        }
+    }
 }
 
 pub struct MacDisplay {
     config: DisplayConfig,
     shared: Arc<Shared>,
+    /// What the client asked for last; the virtual display follows it.
+    wanted: Option<Mode>,
 }
 
 impl MacDisplay {
     pub fn new(config: DisplayConfig, shared: Arc<Shared>) -> Self {
-        Self { config, shared }
+        Self {
+            config,
+            shared,
+            wanted: None,
+        }
+    }
+
+    fn virtual_enabled(&self) -> bool {
+        self.config.match_client && !self.config.test_pattern
+    }
+
+    /// Brings the virtual display to the wanted mode, creating it if needed.
+    /// On failure streaming falls back to the main display.
+    fn sync_virtual_display(&mut self) {
+        let Some(mode) = self.wanted.filter(|_| self.virtual_enabled()) else {
+            return;
+        };
+        let mut slot = self.shared.virtual_display.lock().expect("poisoned");
+        let result = match slot.as_mut() {
+            Some(display) => display.set_mode(mode).map(|()| display.id()),
+            None => VirtualDisplay::new(mode).map(|display| {
+                let id = display.id();
+                *slot = Some(display);
+                id
+            }),
+        };
+        let screen = result.and_then(|id| Screen::of_display(id, true));
+        drop(slot);
+        match screen {
+            Ok(screen) => self.shared.screen.set(screen),
+            Err(err) => {
+                warn!(%err, "cannot match the client size; streaming the main display");
+                self.shared.virtual_display.lock().expect("poisoned").take();
+                self.wanted = None;
+                self.restore_main_screen();
+            }
+        }
+        self.shared.slot.poke();
+    }
+
+    fn restore_main_screen(&self) {
+        match Screen::of_display(CGMainDisplayID(), self.config.hidpi) {
+            Ok(screen) => self.shared.screen.set(screen),
+            Err(err) => warn!(%err, "cannot describe the main display"),
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl RdpServerDisplay for MacDisplay {
     async fn size(&mut self) -> DesktopSize {
-        DesktopSize {
-            width: self.config.desktop.0,
-            height: self.config.desktop.1,
+        let (width, height) = self.shared.screen.get().desktop;
+        DesktopSize { width, height }
+    }
+
+    async fn request_initial_size(&mut self, client_size: DesktopSize) -> DesktopSize {
+        if self.virtual_enabled() {
+            let (width, height) = (u32::from(client_size.width), u32::from(client_size.height));
+            info!(width, height, "client desktop size");
+            self.wanted = Some(Mode::for_client(width, height, 100));
+            self.sync_virtual_display();
         }
+        self.size().await
+    }
+
+    async fn offers_display_control(&mut self) -> bool {
+        self.virtual_enabled()
+    }
+
+    fn request_layout(&mut self, layout: DisplayControlMonitorLayout) {
+        let monitors = layout.monitors();
+        let Some(monitor) = monitors
+            .iter()
+            .find(|m| m.is_primary())
+            .or_else(|| monitors.first())
+        else {
+            return;
+        };
+        let (width, height) = monitor.dimensions();
+        let scale = monitor.desktop_scale_factor().unwrap_or(100);
+        info!(
+            width,
+            height,
+            scale,
+            monitors = monitors.len(),
+            "client layout"
+        );
+        self.wanted = Some(Mode::for_client(width, height, scale));
+        self.sync_virtual_display();
     }
 
     async fn updates(
         &mut self,
         ctx: DisplayContext,
     ) -> ServerResult<Box<dyn RdpServerDisplayUpdates>> {
+        // A previous session of this connection removed the display on drop.
+        self.sync_virtual_display();
         let session = Session::start(self.config, Arc::clone(&self.shared), ctx)
             .map_err(|e| ServerError::custom("display", std::io::Error::other(format!("{e:#}"))))?;
         Ok(Box::new(session))
     }
 }
 
-/// One connection's capture and pipeline; dropping it stops both.
+/// One connection's pipeline; dropping it stops it and removes the virtual display.
 struct Session {
-    _source: Box<dyn Send>,
+    shared: Arc<Shared>,
+    hidpi: bool,
     stop: Arc<AtomicBool>,
-    slot: Arc<FrameSlot>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -107,32 +286,11 @@ impl Session {
             .gfx_handle
             .clone()
             .ok_or_else(|| anyhow!("client did not open the graphics pipeline (EGFX)"))?;
-        let slot = Arc::clone(&shared.slot);
-        let surface = config.surface();
-        let content = (usize::from(config.desktop.0), usize::from(config.desktop.1));
-        let buffer = (usize::from(surface.0), usize::from(surface.1));
-        let source: Box<dyn Send> = if config.test_pattern {
-            Box::new(TestPattern::start(
-                content,
-                buffer,
-                config.fps,
-                Arc::clone(&slot),
-            )?)
-        } else {
-            Box::new(Capture::start(
-                config.display_id,
-                content,
-                buffer,
-                config.fps,
-                Arc::clone(&slot),
-            )?)
-        };
-
         let stop = Arc::new(AtomicBool::new(false));
         let pipeline = Pipeline {
             config,
             gfx,
-            shared,
+            shared: Arc::clone(&shared),
             stop: Arc::clone(&stop),
             suppressed: ctx.display_suppressed,
         };
@@ -140,12 +298,12 @@ impl Session {
             .name("macrdp-pipeline".into())
             .spawn(move || pipeline.run())
             .context("spawn pipeline thread")?;
-        info!(?config, "display session started");
+        info!(?config, screen = ?shared.screen.get(), "display session started");
 
         Ok(Self {
-            _source: source,
+            shared,
+            hidpi: config.hidpi,
             stop,
-            slot,
             thread: Some(thread),
         })
     }
@@ -154,9 +312,22 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        self.slot.poke();
+        self.shared.slot.poke();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
+        }
+        if self
+            .shared
+            .virtual_display
+            .lock()
+            .expect("poisoned")
+            .take()
+            .is_some()
+        {
+            match Screen::of_display(CGMainDisplayID(), self.hidpi) {
+                Ok(screen) => self.shared.screen.set(screen),
+                Err(err) => warn!(%err, "cannot describe the main display"),
+            }
         }
         info!("display session stopped");
     }
@@ -167,6 +338,74 @@ impl RdpServerDisplayUpdates for Session {
     async fn next_update(&mut self) -> ServerResult<Option<ironrdp_server::DisplayUpdate>> {
         // All graphics go through EGFX; pointer updates will come through here.
         std::future::pending().await
+    }
+}
+
+/// Capture and encoder for one screen size.
+struct Video {
+    screen: Screen,
+    _source: Box<dyn Send>,
+    encoder: Encoder,
+    region: Avc420Region,
+}
+
+impl Video {
+    fn open(screen: Screen, config: &DisplayConfig, slot: &Arc<FrameSlot>) -> anyhow::Result<Self> {
+        let surface = screen.surface();
+        let content = (usize::from(screen.desktop.0), usize::from(screen.desktop.1));
+        let buffer = (usize::from(surface.0), usize::from(surface.1));
+        let source: Box<dyn Send> = if config.test_pattern {
+            Box::new(TestPattern::start(
+                content,
+                buffer,
+                config.fps,
+                Arc::clone(slot),
+            )?)
+        } else {
+            Box::new(Self::capture(
+                screen.display_id,
+                content,
+                buffer,
+                config.fps,
+                slot,
+            )?)
+        };
+        let encoder = Encoder::new(buffer.0, buffer.1, config.fps, config.bitrate)?;
+        Ok(Self {
+            screen,
+            _source: source,
+            encoder,
+            region: Avc420Region {
+                left: 0,
+                top: 0,
+                right: screen.desktop.0,
+                bottom: screen.desktop.1,
+                quantization_parameter: REPORTED_QP,
+                quality: 100,
+            },
+        })
+    }
+}
+
+impl Video {
+    fn capture(
+        display_id: u32,
+        content: (usize, usize),
+        buffer: (usize, usize),
+        fps: i32,
+        slot: &Arc<FrameSlot>,
+    ) -> anyhow::Result<Capture> {
+        let mut attempt = 1;
+        loop {
+            match Capture::start(display_id, content, buffer, fps, Arc::clone(slot)) {
+                Ok(capture) => return Ok(capture),
+                Err(err) if attempt < 3 => {
+                    warn!(%err, attempt, "capture did not start, retrying");
+                    attempt += 1;
+                }
+                Err(err) => return Err(err),
+            }
+        }
     }
 }
 
@@ -189,26 +428,11 @@ impl Pipeline {
     }
 
     fn run_inner(&self) -> anyhow::Result<()> {
-        let surface_size = self.config.surface();
-        let (desk_w, desk_h) = self.config.desktop;
-        let mut encoder = Encoder::new(
-            usize::from(surface_size.0),
-            usize::from(surface_size.1),
-            self.config.fps,
-            self.config.bitrate,
-        )?;
-        let region = Avc420Region {
-            left: 0,
-            top: 0,
-            right: desk_w,
-            bottom: desk_h,
-            quantization_parameter: REPORTED_QP,
-            quality: 100,
-        };
-
         let slot = &self.shared.slot;
         let started = Instant::now();
         let mut seen = 0;
+        let mut video: Option<Video> = None;
+        let mut generation = u64::MAX;
         let mut surface: Option<u16> = None;
         let mut need_keyframe = true;
         let mut last: Option<Frame> = None;
@@ -222,8 +446,25 @@ impl Pipeline {
                 return Ok(());
             }
             if self.suppressed.load(Ordering::Relaxed) {
+                // The client may drop what arrived while it was hidden.
+                need_keyframe = true;
                 continue;
             }
+
+            let (current, screen) = self.shared.screen.snapshot();
+            if current != generation {
+                // Stop the old capture before starting one on the same display.
+                drop(video.take());
+                last = None;
+                while slot.take().is_some() {}
+                video = Some(Video::open(screen, &self.config, slot)?);
+                generation = current;
+                surface = None;
+                debug!(?screen, "video source ready");
+            }
+            let video = video.as_mut().expect("opened above");
+            let (desk_w, desk_h) = video.screen.desktop;
+            let surface_size = video.screen.surface();
 
             {
                 let mut server = self.gfx.lock().expect("EGFX server poisoned");
@@ -235,7 +476,8 @@ impl Pipeline {
                     if !server.supports_avc420() {
                         warn!("client did not negotiate H.264 (AVC420); nothing will be shown");
                     }
-                    // Some clients (FreeRDP) reject a ResetGraphics without monitors.
+                    // Also drops the previous surface. Some clients (FreeRDP)
+                    // reject a ResetGraphics without monitors.
                     server.resize_with_monitors(
                         desk_w,
                         desk_h,
@@ -269,7 +511,7 @@ impl Pipeline {
                 None => continue,
             };
 
-            let encoded = match encoder.encode(&frame.0, need_keyframe) {
+            let encoded = match video.encoder.encode(&frame.0, need_keyframe) {
                 Ok(encoded) => encoded,
                 Err(err) => {
                     warn!(%err, "encode failed");
@@ -292,7 +534,7 @@ impl Pipeline {
                 match server.try_send_avc420_frame(
                     id,
                     &encoded.data,
-                    std::slice::from_ref(&region),
+                    std::slice::from_ref(&video.region),
                     timestamp,
                 ) {
                     // A lost P-frame breaks the decoder's reference chain.

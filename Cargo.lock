@@ -1808,6 +1808,7 @@ dependencies = [
  "async-trait",
  "block2",
  "dispatch2",
+ "ironrdp-displaycontrol",
  "ironrdp-dvc",
  "ironrdp-egfx",
  "ironrdp-pdu",
