@@ -1,0 +1,4 @@
+/third_party/
+/target/
+/build/
+.DS_Store
