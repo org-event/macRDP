@@ -36,9 +36,9 @@ use crate::virtual_display::{Mode, VirtualDisplay};
 /// QP reported to the client for each region; informational for AVC420.
 const REPORTED_QP: u8 = 22;
 /// Frames sent but not yet acknowledged before the pipeline waits. Windows
-/// App acknowledges a frame only after presenting it, so the default of 3
-/// capped the rate at 3 frames per acknowledgement delay.
-const MAX_FRAMES_IN_FLIGHT: u32 = 8;
+/// App acknowledges a frame after presenting it; when the client is the
+/// bottleneck every extra frame here only adds a frame time of latency.
+const MAX_FRAMES_IN_FLIGHT: u32 = 3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DisplayConfig {
