@@ -437,6 +437,7 @@ impl Pipeline {
         let mut need_keyframe = true;
         let mut last: Option<Frame> = None;
         let mut frames: u64 = 0;
+        let mut skipped: u64 = 0;
         let mut bytes: u64 = 0;
         let mut stats_at = Instant::now();
 
@@ -512,7 +513,14 @@ impl Pipeline {
             };
 
             let encoded = match video.encoder.encode(&frame.0, need_keyframe) {
-                Ok(encoded) => encoded,
+                Ok(Some(encoded)) => encoded,
+                // Rate control skipped it; encode it again unless a newer one
+                // comes, or a still screen would stay stale.
+                Ok(None) => {
+                    skipped += 1;
+                    slot.restore(frame);
+                    continue;
+                }
                 Err(err) => {
                     warn!(%err, "encode failed");
                     need_keyframe = true;
@@ -554,9 +562,10 @@ impl Pipeline {
                 info!(
                     fps = format!("{:.1}", frames as f64 / secs),
                     mbps = format!("{:.2}", bytes as f64 * 8.0 / secs / 1e6),
+                    skipped,
                     "video"
                 );
-                (frames, bytes, stats_at) = (0, 0, Instant::now());
+                (frames, skipped, bytes, stats_at) = (0, 0, 0, Instant::now());
             }
 
             self.send(messages, channel_id)?;

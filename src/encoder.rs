@@ -32,7 +32,9 @@ pub struct EncodedFrame {
     pub keyframe: bool,
 }
 
-type Output = Result<EncodedFrame, String>;
+/// `None` when the encoder skipped the frame, which its rate control does to
+/// pay for a large frame; the reference chain stays intact.
+type Output = Result<Option<EncodedFrame>, String>;
 
 pub struct Encoder {
     session: CFRetained<VTCompressionSession>,
@@ -111,12 +113,12 @@ impl Encoder {
         }
     }
 
-    /// Encodes one frame synchronously.
+    /// Encodes one frame synchronously; `None` if the encoder skipped it.
     pub fn encode(
         &mut self,
         image: &CVPixelBuffer,
         force_keyframe: bool,
-    ) -> anyhow::Result<EncodedFrame> {
+    ) -> anyhow::Result<Option<EncodedFrame>> {
         let pts = CMTime {
             value: self.frame_index,
             timescale: self.fps,
@@ -243,8 +245,8 @@ unsafe extern "C-unwind" fn output_callback(
     } else {
         // SAFETY: on success the sample buffer is valid (null means the frame was dropped).
         match unsafe { sample.as_ref() } {
-            Some(sample) => unsafe { to_annex_b(sample) },
-            None => Err("encoder dropped the frame".to_owned()),
+            Some(sample) => unsafe { to_annex_b(sample) }.map(Some),
+            None => Ok(None),
         }
     };
     let _ = sender.send(result);
