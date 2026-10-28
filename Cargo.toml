@@ -1,0 +1,28 @@
+[package]
+name = "macrdp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+async-trait = "0.1.92"
+block2 = "0.6.2"
+dispatch2 = "0.3.1"
+ironrdp-dvc = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.10.0" }
+ironrdp-egfx = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.5.0" }
+ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.11.0" }
+ironrdp-server = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.14.0", features = ["egfx", "helper"] }
+ironrdp-svc = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.10.0" }
+objc2 = "0.6.5"
+objc2-core-foundation = "0.3.2"
+objc2-core-graphics = "0.3.2"
+objc2-core-media = "0.3.2"
+objc2-core-video = "0.3.2"
+objc2-foundation = "0.3.2"
+objc2-screen-capture-kit = "0.3.2"
+objc2-video-toolbox = "0.3.2"
+pico-args = "0.5.0"
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
+tokio = { version = "1.54.1", features = ["rt", "macros", "sync", "time"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
