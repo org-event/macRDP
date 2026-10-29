@@ -322,6 +322,7 @@ struct Session {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     cursor_thread: Option<JoinHandle<()>>,
+    _display_awake: Option<crate::power::Awake>,
     pointer_updates: UnboundedReceiver<ironrdp_server::DisplayUpdate>,
 }
 
@@ -364,6 +365,7 @@ impl Session {
             stop,
             thread: Some(thread),
             cursor_thread: Some(cursor_thread),
+            _display_awake: crate::power::Awake::display(),
             pointer_updates,
         })
     }

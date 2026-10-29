@@ -6,6 +6,7 @@ mod cursor;
 mod display;
 mod encoder;
 mod input;
+mod power;
 mod tls;
 mod virtual_display;
 
@@ -152,6 +153,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         builder.with_tls(acceptor)
     };
+    let _awake = power::Awake::system();
     let mut server = builder
         .with_input_handler(MacInput::new(screen))
         .with_display_handler(MacDisplay::new(config, Arc::clone(&shared)))
