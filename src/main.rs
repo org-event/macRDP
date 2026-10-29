@@ -40,6 +40,10 @@ OPTIONS:
                       display sized to the client
   --max-size <WxH>    largest virtual display by area; bigger clients get a
                       proportionally smaller one [default: 3072x1920]
+  --keep-display <SEC>
+                      keep the virtual display after a disconnect, so windows
+                      stay put for a reconnect; 0 removes it at once
+                      [default: 300]
   --hidpi             with --fixed-size: stream in pixels instead of points
   --test-pattern      send a synthetic picture instead of the screen
   --cert <PEM> --key <PEM>
@@ -58,6 +62,7 @@ struct Args {
     bitrate_mbps: u32,
     fixed_size: bool,
     max_pixels: u32,
+    keep_display: u64,
     hidpi: bool,
     test_pattern: bool,
     cert: Option<std::path::PathBuf>,
@@ -105,6 +110,7 @@ fn parse_args(args: Vec<std::ffi::OsString>) -> anyhow::Result<Option<Args>> {
         max_pixels: args
             .opt_value_from_fn("--max-size", parse_area)?
             .unwrap_or(3072 * 1920),
+        keep_display: args.opt_value_from_str("--keep-display")?.unwrap_or(300),
         hidpi: args.contains("--hidpi"),
         test_pattern: args.contains("--test-pattern"),
         cert: args.opt_value_from_str("--cert")?,
@@ -173,6 +179,7 @@ async fn main() -> anyhow::Result<()> {
         hidpi: args.hidpi,
         match_client: !args.fixed_size,
         max_pixels: args.max_pixels,
+        keep_display: std::time::Duration::from_secs(args.keep_display),
         test_pattern: args.test_pattern,
     };
     info!(?screen, match_client = config.match_client, "display");

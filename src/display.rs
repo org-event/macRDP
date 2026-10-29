@@ -53,6 +53,9 @@ pub struct DisplayConfig {
     pub match_client: bool,
     /// Largest virtual display, in pixels.
     pub max_pixels: u32,
+    /// How long the virtual display outlives a disconnect, so a client that
+    /// comes back finds its windows where it left them.
+    pub keep_display: Duration,
     /// Send a synthetic picture instead of the screen.
     pub test_pattern: bool,
 }
@@ -150,9 +153,15 @@ pub struct Shared {
     /// Wakes the pipeline on new frames, EGFX events and screen changes.
     slot: Arc<FrameSlot>,
     screen: Arc<ScreenState>,
-    /// Exists while a client is connected in `match_client` mode.
+    /// Exists while a client is connected in `match_client` mode, and for
+    /// `keep_display` after it leaves.
     virtual_display: Mutex<Option<VirtualDisplay>>,
     acks: Mutex<AckStats>,
+    /// Display sessions running now.
+    sessions: AtomicU64,
+    /// Bumped on every session start, so a pending removal can tell that a
+    /// client came back in the meantime.
+    session_epoch: AtomicU64,
 }
 
 /// Time from sending a frame to its acknowledgement, for the stats log.
@@ -199,6 +208,57 @@ impl Shared {
             screen,
             virtual_display: Mutex::new(None),
             acks: Mutex::default(),
+            sessions: AtomicU64::new(0),
+            session_epoch: AtomicU64::new(0),
+        }
+    }
+
+    /// Removes the virtual display and streams the main one again.
+    fn remove_virtual_display(&self, hidpi: bool) {
+        let display = self.virtual_display.lock().expect("poisoned").take();
+        self.forget_virtual_display(display, hidpi);
+    }
+
+    fn forget_virtual_display(&self, display: Option<VirtualDisplay>, hidpi: bool) {
+        let Some(display) = display else { return };
+        drop(display);
+        match Screen::of_display(CGMainDisplayID(), hidpi) {
+            Ok(screen) => self.screen.set(screen),
+            Err(err) => warn!(%err, "cannot describe the main display"),
+        }
+    }
+
+    /// Removes the virtual display after `delay` unless a session starts first.
+    fn remove_virtual_display_later(self: &Arc<Self>, delay: Duration, hidpi: bool) {
+        if delay.is_zero() {
+            self.remove_virtual_display(hidpi);
+            return;
+        }
+        if self.virtual_display.lock().expect("poisoned").is_none() {
+            return;
+        }
+        let epoch = self.session_epoch.load(Ordering::Acquire);
+        let shared = Arc::clone(self);
+        info!(seconds = delay.as_secs(), "keeping the virtual display for a reconnect");
+        let spawned = std::thread::Builder::new()
+            .name("macrdp-keep-display".into())
+            .spawn(move || {
+                std::thread::sleep(delay);
+                // Under the display lock: a client reusing the display bumps the
+                // epoch while holding it.
+                let mut slot = shared.virtual_display.lock().expect("poisoned");
+                let idle = shared.sessions.load(Ordering::Acquire) == 0
+                    && shared.session_epoch.load(Ordering::Acquire) == epoch;
+                if idle {
+                    info!("no reconnect; removing the virtual display");
+                    let display = slot.take();
+                    drop(slot);
+                    shared.forget_virtual_display(display, hidpi);
+                }
+            });
+        if let Err(err) = spawned {
+            warn!(%err, "cannot schedule the display removal; removing it now");
+            self.remove_virtual_display(hidpi);
         }
     }
 }
@@ -230,6 +290,8 @@ impl MacDisplay {
             return;
         };
         let mut slot = self.shared.virtual_display.lock().expect("poisoned");
+        // A pending removal must not take a display a client is using again.
+        self.shared.session_epoch.fetch_add(1, Ordering::AcqRel);
         let result = match slot.as_mut() {
             Some(display) => display.set_mode(mode).map(|()| display.id()),
             None => VirtualDisplay::new(mode).map(|display| {
@@ -307,7 +369,7 @@ impl RdpServerDisplay for MacDisplay {
         &mut self,
         ctx: DisplayContext,
     ) -> ServerResult<Box<dyn RdpServerDisplayUpdates>> {
-        // A previous session of this connection removed the display on drop.
+        // The display may have gone while the client was away.
         self.sync_virtual_display();
         let session = Session::start(self.config, Arc::clone(&self.shared), ctx)
             .map_err(|e| ServerError::custom("display", std::io::Error::other(format!("{e:#}"))))?;
@@ -319,6 +381,7 @@ impl RdpServerDisplay for MacDisplay {
 struct Session {
     shared: Arc<Shared>,
     hidpi: bool,
+    keep_display: Duration,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     cursor_thread: Option<JoinHandle<()>>,
@@ -357,11 +420,14 @@ impl Session {
                 move || watch_cursor(&shared, &stop, &pointer_tx)
             })
             .context("spawn cursor thread")?;
+        shared.sessions.fetch_add(1, Ordering::AcqRel);
+        shared.session_epoch.fetch_add(1, Ordering::AcqRel);
         info!(?config, screen = ?shared.screen.get(), "display session started");
 
         Ok(Self {
             shared,
             hidpi: config.hidpi,
+            keep_display: config.keep_display,
             stop,
             thread: Some(thread),
             cursor_thread: Some(cursor_thread),
@@ -378,19 +444,9 @@ impl Drop for Session {
         for thread in [self.thread.take(), self.cursor_thread.take()].into_iter().flatten() {
             let _ = thread.join();
         }
-        if self
-            .shared
-            .virtual_display
-            .lock()
-            .expect("poisoned")
-            .take()
-            .is_some()
-        {
-            match Screen::of_display(CGMainDisplayID(), self.hidpi) {
-                Ok(screen) => self.shared.screen.set(screen),
-                Err(err) => warn!(%err, "cannot describe the main display"),
-            }
-        }
+        self.shared.sessions.fetch_sub(1, Ordering::AcqRel);
+        self.shared
+            .remove_virtual_display_later(self.keep_display, self.hidpi);
         info!("display session stopped");
     }
 }
