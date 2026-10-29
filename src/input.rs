@@ -27,8 +27,6 @@ pub struct MacInput {
     position: CGPoint,
     pressed: [bool; 5],
     last_click: Option<(MouseButton, Instant, CGPoint, i64)>,
-    /// Space went into a layout switch, so its release is not posted either.
-    space_switched: bool,
 }
 
 impl MacInput {
@@ -39,7 +37,6 @@ impl MacInput {
             position: CGPoint::ZERO,
             pressed: [false; 5],
             last_click: None,
-            space_switched: false,
         }
     }
 
@@ -63,9 +60,6 @@ impl MacInput {
             return;
         };
         trace!(code, extended, key, down, "key");
-        if key == 0x31 && self.layout_shortcut(down) {
-            return;
-        }
         let mask = modifier_mask(key);
         if !mask.is_empty() {
             if down {
@@ -75,21 +69,6 @@ impl MacInput {
             }
         }
         self.post(CGEvent::new_keyboard_event(None, key, down));
-    }
-
-    /// Control+Space and Control+Option+Space, the macOS defaults for the next
-    /// input source, switch the layout here instead of reaching apps.
-    fn layout_shortcut(&mut self, down: bool) -> bool {
-        if !down {
-            return std::mem::take(&mut self.space_switched);
-        }
-        let others = CGEventFlags::MaskCommand | CGEventFlags::MaskShift;
-        if !self.modifiers.contains(CGEventFlags::MaskControl) || self.modifiers.intersects(others) {
-            return false;
-        }
-        crate::input_source::select_next();
-        self.space_switched = true;
-        true
     }
 
     fn unicode(&self, ch: u16, down: bool) {

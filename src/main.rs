@@ -1,11 +1,11 @@
 //! macRDP: an RDP server for macOS built on IronRDP.
 
 mod capture;
+mod clipboard;
 mod cursor;
 mod display;
 mod encoder;
 mod input;
-mod input_source;
 mod tls;
 mod virtual_display;
 
@@ -156,6 +156,7 @@ async fn main() -> anyhow::Result<()> {
         .with_input_handler(MacInput::new(screen))
         .with_display_handler(MacDisplay::new(config, Arc::clone(&shared)))
         .with_gfx_factory(Some(Box::new(GfxFactory::new(shared))))
+        .with_cliprdr_factory(Some(Box::new(clipboard::MacClipboardFactory::default())))
         .build();
     server.set_credentials(Some(Credentials {
         username: args.user,
