@@ -199,9 +199,11 @@ impl CliprdrBackend for MacClipboard {
         let png = find(&|f| f.name().is_some_and(|n| n.value().eq_ignore_ascii_case(PNG_NAME)));
         let dib = find(&|f| f.id() == ClipboardFormatId::CF_DIBV5)
             .or_else(|| find(&|f| f.id() == ClipboardFormatId::CF_DIB));
+        // PNG first; the bitmap is the fallback if the client cannot render it.
         if let Some(id) = png {
             queue.push_back((Fetch::Png, id));
-        } else if let Some(id) = dib {
+        }
+        if let Some(id) = dib {
             queue.push_back((Fetch::Dib, id));
         }
         // A new copy replaces one still being fetched.
@@ -233,7 +235,10 @@ impl CliprdrBackend for MacClipboard {
                     Ok(text) => self.incoming.text = Some(text),
                     Err(err) => warn!(%err, "bad clipboard text"),
                 },
-                Fetch::Png => self.incoming.png = Some(response.data().to_vec()),
+                Fetch::Png => {
+                    self.incoming.png = Some(response.data().to_vec());
+                    self.incoming.queue.retain(|&(fetch, _)| fetch != Fetch::Dib);
+                }
                 Fetch::Dib => {
                     let data = response.data();
                     let png = if format == ClipboardFormatId::CF_DIBV5 {
