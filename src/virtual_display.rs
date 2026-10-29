@@ -40,24 +40,39 @@ pub struct Mode {
 }
 
 impl Mode {
-    /// The mode for a client asking for `width`x`height` pixels at `scale` percent.
+    /// The mode for a client asking for `width`x`height` pixels at `scale` percent,
+    /// in at most `max_pixels`.
     ///
     /// Retina-sized requests get a HiDPI mode even at 100%, as macOS would pick
-    /// for such a panel. A size H.264 cannot carry is scaled down, keeping the
-    /// aspect ratio; the client then stretches the picture a little. The result
-    /// is a whole number of points.
-    pub fn for_client(width: u32, height: u32, scale: u32) -> Self {
-        let hidpi = scale >= 175 || width >= 2880 || height >= 1800;
+    /// for such a panel. A larger size than the budget (or than H.264 can carry)
+    /// is scaled down keeping the aspect ratio, and the client stretches the
+    /// picture. A scaled-down Retina request drops to 1x unless it stays
+    /// Retina-sized, so the interface keeps about the size the client expects
+    /// instead of doubling. The result is a whole number of points.
+    pub fn for_client(width: u32, height: u32, scale: u32, max_pixels: u32) -> Self {
+        let retina = |w: u32, h: u32| w >= 2880 || h >= 1800;
+        let budget = |w: u32, h: u32| {
+            w.div_ceil(16) * h.div_ceil(16) <= MAX_MACROBLOCKS && w * h <= max_pixels
+        };
+        let fit = |value: u32, max: u32, step: u32| (value.clamp(2 * step, max) / step) * step;
+        let mut hidpi = scale >= 175 || retina(width, height);
         let step = if hidpi { 2 } else { 1 };
-        let fit = |value: u32, max: u32| (value.clamp(2 * step, max) / step) * step;
-        let (mut w, mut h) = (fit(width, MAX_PIXELS.0), fit(height, MAX_PIXELS.1));
-        let macroblocks = |w: u32, h: u32| w.div_ceil(16) * h.div_ceil(16);
-        let (full_w, full_h) = (w, h);
-        let mut percent = 100;
-        while macroblocks(w, h) > MAX_MACROBLOCKS {
-            percent -= 1;
-            w = fit(full_w * percent / 100, MAX_PIXELS.0);
-            h = fit(full_h * percent / 100, MAX_PIXELS.1);
+        let (full_w, full_h) = (fit(width, MAX_PIXELS.0, step), fit(height, MAX_PIXELS.1, step));
+        let area = f64::from(full_w) * f64::from(full_h);
+        let mut factor = (f64::from(max_pixels) / area).sqrt().min(1.0);
+        let scaled = |factor: f64| {
+            let side = |value: u32| ((f64::from(value) * factor) as u32).max(2);
+            (side(full_w), side(full_h))
+        };
+        let (mut w, mut h) = scaled(factor);
+        while !budget(w, h) && factor > 0.01 {
+            factor -= 0.005;
+            (w, h) = scaled(factor);
+        }
+        if (w, h) != (full_w, full_h) {
+            hidpi &= retina(w, h);
+            let step = if hidpi { 2 } else { 1 };
+            (w, h) = (fit(w, MAX_PIXELS.0, step), fit(h, MAX_PIXELS.1, step));
         }
         Self {
             width: w,
@@ -311,7 +326,7 @@ mod tests {
     #[test]
     fn fits_h264() {
         // A 16" MacBook Pro in Windows App with "Optimize for Retina displays".
-        let mode = Mode::for_client(4096, 2560, 100);
+        let mode = Mode::for_client(4096, 2560, 100, u32::MAX);
         assert!(mode.hidpi);
         assert!(mode.width.div_ceil(16) * mode.height.div_ceil(16) <= 36_864);
         assert_eq!((mode.width % 2, mode.height % 2), (0, 0));
@@ -320,7 +335,7 @@ mod tests {
         assert!(mode.width >= 3800, "{mode:?}");
 
         assert_eq!(
-            Mode::for_client(2560, 1080, 100),
+            Mode::for_client(2560, 1080, 100, u32::MAX),
             Mode {
                 width: 2560,
                 height: 1080,
@@ -328,12 +343,39 @@ mod tests {
             }
         );
         assert_eq!(
-            Mode::for_client(3456, 2234, 200),
+            Mode::for_client(3456, 2234, 200, u32::MAX),
             Mode {
                 width: 3456,
                 height: 2234,
                 hidpi: true
             }
         );
+    }
+
+    #[test]
+    fn fits_budget() {
+        let budget = 2560 * 1600;
+        // Retina request scaled to the budget drops to 1x.
+        assert_eq!(
+            Mode::for_client(4096, 2560, 200, budget),
+            Mode {
+                width: 2560,
+                height: 1600,
+                hidpi: false
+            }
+        );
+        // Within budget: untouched.
+        assert_eq!(
+            Mode::for_client(2560, 1080, 100, budget),
+            Mode {
+                width: 2560,
+                height: 1080,
+                hidpi: false
+            }
+        );
+        // Still Retina-sized after scaling: stays HiDPI on even pixels.
+        let mode = Mode::for_client(4096, 2560, 200, 3200 * 2000);
+        assert!(mode.hidpi && mode.width * mode.height <= 3200 * 2000, "{mode:?}");
+        assert_eq!((mode.width % 2, mode.height % 2), (0, 0));
     }
 }

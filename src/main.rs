@@ -32,6 +32,8 @@ OPTIONS:
   --bitrate <MBPS>    average H.264 bitrate [default: 20]
   --fixed-size        stream the main display as it is instead of a virtual
                       display sized to the client
+  --max-size <WxH>    largest virtual display by area; bigger clients get a
+                      proportionally smaller one [default: 2560x1600]
   --hidpi             with --fixed-size: stream in pixels instead of points
   --test-pattern      send a synthetic picture instead of the screen
   --cert <PEM> --key <PEM>
@@ -49,10 +51,18 @@ struct Args {
     fps: i32,
     bitrate_mbps: u32,
     fixed_size: bool,
+    max_pixels: u32,
     hidpi: bool,
     test_pattern: bool,
     cert: Option<std::path::PathBuf>,
     key: Option<std::path::PathBuf>,
+}
+
+/// `WxH` as a pixel count.
+fn parse_area(value: &str) -> anyhow::Result<u32> {
+    let (w, h) = value.split_once('x').context("expected WxH, like 2560x1600")?;
+    let (w, h): (u32, u32) = (w.parse()?, h.parse()?);
+    w.checked_mul(h).filter(|&area| area > 0).context("size out of range")
 }
 
 fn parse_args() -> anyhow::Result<Option<Args>> {
@@ -86,6 +96,9 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
         fps: args.opt_value_from_str("--fps")?.unwrap_or(60),
         bitrate_mbps: args.opt_value_from_str("--bitrate")?.unwrap_or(20),
         fixed_size: args.contains("--fixed-size"),
+        max_pixels: args
+            .opt_value_from_fn("--max-size", parse_area)?
+            .unwrap_or(2560 * 1600),
         hidpi: args.contains("--hidpi"),
         test_pattern: args.contains("--test-pattern"),
         cert: args.opt_value_from_str("--cert")?,
@@ -122,6 +135,7 @@ async fn main() -> anyhow::Result<()> {
         bitrate: args.bitrate_mbps.saturating_mul(1_000_000),
         hidpi: args.hidpi,
         match_client: !args.fixed_size,
+        max_pixels: args.max_pixels,
         test_pattern: args.test_pattern,
     };
     info!(?screen, match_client = config.match_client, "display");

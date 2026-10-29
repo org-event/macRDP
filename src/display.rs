@@ -48,6 +48,8 @@ pub struct DisplayConfig {
     pub hidpi: bool,
     /// Stream a virtual display sized to the client instead of the main display.
     pub match_client: bool,
+    /// Largest virtual display, in pixels.
+    pub max_pixels: u32,
     /// Send a synthetic picture instead of the screen.
     pub test_pattern: bool,
 }
@@ -266,7 +268,7 @@ impl RdpServerDisplay for MacDisplay {
         if self.virtual_enabled() {
             let (width, height) = (u32::from(client_size.width), u32::from(client_size.height));
             info!(width, height, "client desktop size");
-            self.wanted = Some(Mode::for_client(width, height, 100));
+            self.wanted = Some(Mode::for_client(width, height, 100, self.config.max_pixels));
             self.sync_virtual_display();
         }
         self.size().await
@@ -294,7 +296,7 @@ impl RdpServerDisplay for MacDisplay {
             monitors = monitors.len(),
             "client layout"
         );
-        self.wanted = Some(Mode::for_client(width, height, scale));
+        self.wanted = Some(Mode::for_client(width, height, scale, self.config.max_pixels));
         self.sync_virtual_display();
     }
 
