@@ -7,6 +7,7 @@ mod display;
 mod encoder;
 mod input;
 mod power;
+mod service;
 mod tls;
 mod virtual_display;
 
@@ -26,6 +27,9 @@ macrdp — RDP server for macOS
 
 USAGE:
   macrdp --user <NAME> --pass <PASSWORD> [OPTIONS]
+  macrdp install --user <NAME> --pass <PASSWORD> [OPTIONS]
+                      run at login as ~/Applications/macRDP.app (LaunchAgent)
+  macrdp uninstall    remove it
 
 OPTIONS:
   --bind <ADDR>       listen address [default: 0.0.0.0:3389]
@@ -67,8 +71,8 @@ fn parse_area(value: &str) -> anyhow::Result<u32> {
     w.checked_mul(h).filter(|&area| area > 0).context("size out of range")
 }
 
-fn parse_args() -> anyhow::Result<Option<Args>> {
-    let mut args = pico_args::Arguments::from_env();
+fn parse_args(args: Vec<std::ffi::OsString>) -> anyhow::Result<Option<Args>> {
+    let mut args = pico_args::Arguments::from_vec(args);
     if args.contains(["-h", "--help"]) {
         return Ok(None);
     }
@@ -113,16 +117,47 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
     Ok(Some(parsed))
 }
 
+/// Validates the server options, then installs the agent with them, keeping
+/// the password out of its command line.
+fn install(argv: Vec<std::ffi::OsString>) -> anyhow::Result<()> {
+    let Some(args) = parse_args(argv.clone()).inspect_err(|_| eprintln!("{HELP}"))? else {
+        print!("{HELP}");
+        return Ok(());
+    };
+    let mut server_args = Vec::new();
+    let mut argv = argv.into_iter().map(|a| a.to_string_lossy().into_owned());
+    while let Some(arg) = argv.next() {
+        if arg == "--pass" {
+            argv.next();
+        } else if !arg.starts_with("--pass=") {
+            server_args.push(arg);
+        }
+    }
+    service::install(&server_args, &args.pass)
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
+    use std::io::IsTerminal as _;
     tracing_subscriber::fmt()
+        .with_ansi(std::io::stdout().is_terminal())
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "macrdp=info,warn".into()),
         )
         .init();
 
-    let Some(args) = parse_args().inspect_err(|_| eprintln!("{HELP}"))? else {
+    let mut argv: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    match argv.first().and_then(|a| a.to_str()) {
+        Some("uninstall") => return service::uninstall(),
+        Some("install") => {
+            argv.remove(0);
+            return install(argv);
+        }
+        _ => {}
+    }
+
+    let Some(args) = parse_args(argv).inspect_err(|_| eprintln!("{HELP}"))? else {
         print!("{HELP}");
         return Ok(());
     };
