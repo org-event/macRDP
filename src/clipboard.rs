@@ -88,6 +88,19 @@ impl Shared {
         debug!(?formats, "announcing the Mac clipboard");
         self.send(ClipboardMessage::SendInitiateCopy(formats));
     }
+
+    /// Runs pasteboard work off the server's task: reading data the copying app
+    /// promised (Universal Clipboard pulls it from another device) can take
+    /// many seconds, and the whole connection would freeze meanwhile.
+    fn in_background(self: &Arc<Self>, work: impl FnOnce(&Self) + Send + 'static) {
+        let shared = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name("macrdp-pasteboard".into())
+            .spawn(move || work(&shared));
+        if let Err(err) = spawned {
+            warn!(%err, "cannot start pasteboard work");
+        }
+    }
 }
 
 pub struct MacClipboard {
@@ -175,12 +188,12 @@ impl CliprdrBackend for MacClipboard {
     }
 
     fn on_ready(&mut self) {
-        self.shared.announce();
+        self.shared.in_background(Shared::announce);
         self.start_watching();
     }
 
     fn on_request_format_list(&mut self) {
-        self.shared.announce();
+        self.shared.in_background(Shared::announce);
     }
 
     fn on_process_negotiated_capabilities(&mut self, capabilities: ClipboardGeneralCapabilityFlags) {
@@ -215,12 +228,16 @@ impl CliprdrBackend for MacClipboard {
     }
 
     fn on_format_data_request(&mut self, request: FormatDataRequest) {
-        let response = autoreleasepool(|_| local_data(request.format));
-        let response = response.unwrap_or_else(|| {
-            debug!(format = ?request.format, "clipboard format not available");
-            OwnedFormatDataResponse::new_error()
+        self.shared.in_background(move |shared| {
+            let started = std::time::Instant::now();
+            let response = autoreleasepool(|_| local_data(request.format));
+            debug!(format = ?request.format, ms = started.elapsed().as_millis(), "clipboard read");
+            let response = response.unwrap_or_else(|| {
+                debug!(format = ?request.format, "clipboard format not available");
+                OwnedFormatDataResponse::new_error()
+            });
+            shared.send(ClipboardMessage::SendFormatData(response));
         });
-        self.shared.send(ClipboardMessage::SendFormatData(response));
     }
 
     fn on_format_data_response(&mut self, response: FormatDataResponse<'_>) {
@@ -281,16 +298,22 @@ fn watch(shared: &Shared) {
     }
 }
 
+/// Formats from the pasteboard's type list alone: reading the data could wait
+/// on the app or device that promised it.
 fn local_formats() -> Vec<ClipboardFormat> {
     let pasteboard = NSPasteboard::generalPasteboard();
     let mut formats = Vec::new();
+    let Some(types) = pasteboard.types() else {
+        return formats;
+    };
     // SAFETY: AppKit's pasteboard type constants.
     let (string, png, tiff) =
         unsafe { (NSPasteboardTypeString, NSPasteboardTypePNG, NSPasteboardTypeTIFF) };
-    if pasteboard.stringForType(string).is_some() {
+    let has = |wanted: &NSString| types.iter().any(|t| &*t == wanted);
+    if has(string) {
         formats.push(ClipboardFormat::new(ClipboardFormatId::CF_UNICODETEXT));
     }
-    if pasteboard.dataForType(png).is_some() || pasteboard.dataForType(tiff).is_some() {
+    if has(png) || has(tiff) {
         formats.push(ClipboardFormat::new(ClipboardFormatId::CF_DIB));
         formats.push(
             ClipboardFormat::new(PNG_FORMAT).with_name(ClipboardFormatName::new_static(PNG_NAME)),
