@@ -58,8 +58,9 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
     println!("Log: {}", paths.log.display());
     println!(
         "On first start macOS asks for Screen Recording and Accessibility for \"macRDP\": \
-         allow both at the Mac (System Settings cannot be changed remotely), then the agent \
-         restarts on its own within a few seconds."
+         allow both at the Mac (System Settings cannot be changed remotely), then restart it:\n  \
+         launchctl kickstart -k {}/{LABEL}",
+        domain()
     );
     Ok(())
 }

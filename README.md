@@ -26,6 +26,20 @@ cargo build --release
 - **Screen & System Audio Recording** — без него картинки нет;
 - **Accessibility** — без него не работают клавиатура и мышь.
 
+### Автозапуск
+
+```bash
+./target/release/macrdp install --user me --pass secret
+```
+
+Копирует сервер в `~/Applications/macRDP.app` и ставит LaunchAgent `com.macrdp.server`. Сервер стартует при входе в систему и перезапускается, если упал. Пароль лежит в `~/Library/LaunchAgents/com.macrdp.server.plist` с правами 600, лог пишется в `~/Library/Logs/macrdp.log`. Права macOS в этом режиме выдаются «macRDP», а не терминалу. Выдать их можно только за самим маком, после этого сервер нужно перезапустить:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.macrdp.server
+```
+
+После обновления сборки снова выполните `install`. Подпись ad hoc меняется с каждой сборкой, поэтому macOS может попросить права заново. `macrdp uninstall` удаляет и агент, и приложение. На экране входа сервер не работает: он запускается только после логина, а после перезагрузки с FileVault нужен пароль за маком или `sudo fdesetup authrestart`.
+
 `--test-pattern` шлёт синтетическую картинку вместо экрана: проверка видеопути без прав на запись экрана.
 
 Проверка с FreeRDP:
