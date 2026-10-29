@@ -45,6 +45,8 @@ OPTIONS:
                       stay put for a reconnect; 0 removes it at once
                       [default: 300]
   --hidpi             with --fixed-size: stream in pixels instead of points
+  --no-clipboard      do not share the clipboard (Universal Clipboard between
+                      Macs on one Apple ID fights with it)
   --test-pattern      send a synthetic picture instead of the screen
   --cert <PEM> --key <PEM>
                       TLS identity [default: self-signed, kept in
@@ -65,6 +67,7 @@ struct Args {
     keep_display: u64,
     hidpi: bool,
     test_pattern: bool,
+    clipboard: bool,
     cert: Option<std::path::PathBuf>,
     key: Option<std::path::PathBuf>,
 }
@@ -113,6 +116,7 @@ fn parse_args(args: Vec<std::ffi::OsString>) -> anyhow::Result<Option<Args>> {
         keep_display: args.opt_value_from_str("--keep-display")?.unwrap_or(300),
         hidpi: args.contains("--hidpi"),
         test_pattern: args.contains("--test-pattern"),
+        clipboard: !args.contains("--no-clipboard"),
         cert: args.opt_value_from_str("--cert")?,
         key: args.opt_value_from_str("--key")?,
     };
@@ -200,7 +204,10 @@ async fn main() -> anyhow::Result<()> {
         .with_input_handler(MacInput::new(screen))
         .with_display_handler(MacDisplay::new(config, Arc::clone(&shared)))
         .with_gfx_factory(Some(Box::new(GfxFactory::new(shared))))
-        .with_cliprdr_factory(Some(Box::new(clipboard::MacClipboardFactory::default())))
+        .with_cliprdr_factory(
+            args.clipboard
+                .then(|| Box::new(clipboard::MacClipboardFactory::default()) as Box<_>),
+        )
         .build();
     server.set_credentials(Some(Credentials {
         username: args.user,
