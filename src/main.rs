@@ -1,6 +1,7 @@
 //! macRDP: an RDP server for macOS built on IronRDP.
 
 mod capture;
+mod cursor;
 mod display;
 mod encoder;
 mod input;
@@ -33,7 +34,7 @@ OPTIONS:
   --fixed-size        stream the main display as it is instead of a virtual
                       display sized to the client
   --max-size <WxH>    largest virtual display by area; bigger clients get a
-                      proportionally smaller one [default: 2560x1600]
+                      proportionally smaller one [default: 3072x1920]
   --hidpi             with --fixed-size: stream in pixels instead of points
   --test-pattern      send a synthetic picture instead of the screen
   --cert <PEM> --key <PEM>
@@ -98,7 +99,7 @@ fn parse_args() -> anyhow::Result<Option<Args>> {
         fixed_size: args.contains("--fixed-size"),
         max_pixels: args
             .opt_value_from_fn("--max-size", parse_area)?
-            .unwrap_or(2560 * 1600),
+            .unwrap_or(3072 * 1920),
         hidpi: args.contains("--hidpi"),
         test_pattern: args.contains("--test-pattern"),
         cert: args.opt_value_from_str("--cert")?,

@@ -179,8 +179,8 @@ impl Capture {
             config.setPixelFormat(PIXEL_FORMAT_420F);
             config.setColorMatrix(objc2_core_video::kCVImageBufferYCbCrMatrix_ITU_R_709_2);
             config.setColorSpaceName(objc2_core_graphics::kCGColorSpaceSRGB);
-            // The cursor is drawn into the video until it gets its own channel.
-            config.setShowsCursor(true);
+            // The client draws the cursor from pointer updates (see `cursor`).
+            config.setShowsCursor(false);
             config.setMinimumFrameInterval(CMTime {
                 value: 1,
                 timescale: fps,

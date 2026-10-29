@@ -26,15 +26,18 @@ use ironrdp_server::{
 };
 use ironrdp_svc::ChannelFlags;
 use objc2_core_graphics::{CGDisplayBounds, CGMainDisplayID};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error, info, warn};
 
 use crate::capture::{Capture, Frame, FrameSlot, TestPattern};
+use crate::cursor::CursorWatch;
 use crate::encoder::Encoder;
 use crate::virtual_display::{Mode, VirtualDisplay};
 
 /// QP reported to the client for each region; informational for AVC420.
 const REPORTED_QP: u8 = 22;
+/// How often the cursor shape is checked.
+const CURSOR_POLL: Duration = Duration::from_millis(30);
 /// Frames sent but not yet acknowledged before the pipeline waits. Windows
 /// App acknowledges a frame after presenting it; when the client is the
 /// bottleneck every extra frame here only adds a frame time of latency.
@@ -318,6 +321,8 @@ struct Session {
     hidpi: bool,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    cursor_thread: Option<JoinHandle<()>>,
+    pointer_updates: UnboundedReceiver<ironrdp_server::DisplayUpdate>,
 }
 
 impl Session {
@@ -342,6 +347,15 @@ impl Session {
             .name("macrdp-pipeline".into())
             .spawn(move || pipeline.run())
             .context("spawn pipeline thread")?;
+        let (pointer_tx, pointer_updates) = tokio::sync::mpsc::unbounded_channel();
+        let cursor_thread = std::thread::Builder::new()
+            .name("macrdp-cursor".into())
+            .spawn({
+                let shared = Arc::clone(&shared);
+                let stop = Arc::clone(&stop);
+                move || watch_cursor(&shared, &stop, &pointer_tx)
+            })
+            .context("spawn cursor thread")?;
         info!(?config, screen = ?shared.screen.get(), "display session started");
 
         Ok(Self {
@@ -349,6 +363,8 @@ impl Session {
             hidpi: config.hidpi,
             stop,
             thread: Some(thread),
+            cursor_thread: Some(cursor_thread),
+            pointer_updates,
         })
     }
 }
@@ -357,7 +373,7 @@ impl Drop for Session {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         self.shared.slot.poke();
-        if let Some(thread) = self.thread.take() {
+        for thread in [self.thread.take(), self.cursor_thread.take()].into_iter().flatten() {
             let _ = thread.join();
         }
         if self
@@ -380,8 +396,36 @@ impl Drop for Session {
 #[async_trait::async_trait]
 impl RdpServerDisplayUpdates for Session {
     async fn next_update(&mut self) -> ServerResult<Option<ironrdp_server::DisplayUpdate>> {
-        // All graphics go through EGFX; pointer updates will come through here.
-        std::future::pending().await
+        // Graphics go through EGFX; only the pointer comes through here.
+        match self.pointer_updates.recv().await {
+            Some(update) => Ok(Some(update)),
+            None => std::future::pending().await,
+        }
+    }
+}
+
+/// Sends the cursor to the client whenever its shape changes.
+fn watch_cursor(
+    shared: &Shared,
+    stop: &AtomicBool,
+    updates: &UnboundedSender<ironrdp_server::DisplayUpdate>,
+) {
+    let mut watch = CursorWatch::default();
+    let mut generation = shared.screen.snapshot().0;
+    while !stop.load(Ordering::Acquire) {
+        let (now, screen) = shared.screen.snapshot();
+        if now != generation {
+            // A new scale needs the shape at the new size.
+            generation = now;
+            watch = CursorWatch::default();
+        }
+        if let Some(pointer) = watch.changed(screen.scale) {
+            debug!(?pointer, "cursor changed");
+            if updates.send(ironrdp_server::DisplayUpdate::RGBAPointer(pointer)).is_err() {
+                return;
+            }
+        }
+        std::thread::sleep(CURSOR_POLL);
     }
 }
 
