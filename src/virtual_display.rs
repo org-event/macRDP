@@ -6,6 +6,8 @@
 //! mirroring is configured for this process only: macOS restores the previous
 //! arrangement when the display goes away or the process exits.
 
+use std::time::Duration;
+
 use anyhow::{Context as _, anyhow, bail};
 use dispatch2::{DispatchQueue, DispatchRetained};
 use objc2::msg_send;
@@ -26,6 +28,8 @@ const MAX_PIXELS: (u32, u32) = (7680, 4320);
 /// Hardware encoders and decoders on both ends stop there: past it the
 /// encoder drops frames and clients show garbage.
 const MAX_MACROBLOCKS: u32 = 36_864;
+/// Tries at mirroring the physical displays, 300 ms apart.
+const MIRROR_ATTEMPTS: u32 = 5;
 
 /// A display mode in pixels; HiDPI modes have half as many points.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,7 +210,25 @@ impl VirtualDisplay {
     }
 
     /// Makes every other active display mirror this one.
+    ///
+    /// Right after a display appears or goes away macOS can refuse the
+    /// configuration for a moment, so it is retried.
     fn mirror_physical(&mut self) -> anyhow::Result<()> {
+        let mut attempt = 1;
+        loop {
+            match self.try_mirror_physical() {
+                Ok(()) => return Ok(()),
+                Err(err) if attempt < MIRROR_ATTEMPTS => {
+                    debug!(id = self.id, attempt, "{err:#}; retrying");
+                    std::thread::sleep(Duration::from_millis(300));
+                    attempt += 1;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    fn try_mirror_physical(&mut self) -> anyhow::Result<()> {
         let physical: Vec<u32> = active_displays()?
             .into_iter()
             .filter(|&id| id != self.id)
@@ -214,7 +236,8 @@ impl VirtualDisplay {
         configure(|config| {
             for &id in &physical {
                 // SAFETY: config comes from CGBeginDisplayConfiguration.
-                check(unsafe { CGConfigureDisplayMirrorOfDisplay(config, id, self.id) })?;
+                check(unsafe { CGConfigureDisplayMirrorOfDisplay(config, id, self.id) })
+                    .with_context(|| format!("mirror display {id}"))?;
             }
             Ok(())
         })

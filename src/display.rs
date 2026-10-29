@@ -238,7 +238,7 @@ impl MacDisplay {
         match screen {
             Ok(screen) => self.shared.screen.set(screen),
             Err(err) => {
-                warn!(%err, "cannot match the client size; streaming the main display");
+                warn!("cannot match the client size, streaming the main display: {err:#}");
                 self.shared.virtual_display.lock().expect("poisoned").take();
                 self.wanted = None;
                 self.restore_main_screen();

@@ -4,6 +4,7 @@ mod capture;
 mod display;
 mod encoder;
 mod input;
+mod input_source;
 mod tls;
 mod virtual_display;
 
