@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon/AppIcon-256.png" width="128" height="128" alt=""></p>
+
 # macRDP
 
 [![CI](https://github.com/org-event/macRDP/actions/workflows/ci.yml/badge.svg)](https://github.com/org-event/macRDP/actions/workflows/ci.yml)

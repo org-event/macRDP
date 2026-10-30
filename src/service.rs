@@ -11,6 +11,9 @@ use std::process::Command;
 use anyhow::{Context as _, bail};
 
 const LABEL: &str = "com.macrdp.server";
+/// Shown in Finder and in the Privacy & Security lists. Rebuilt from
+/// `AppIcon.svg` by `scripts/make-icon.swift`.
+const ICON: &[u8] = include_bytes!("../assets/icon/AppIcon.icns");
 
 struct Paths {
     app: PathBuf,
@@ -48,6 +51,9 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
     std::fs::copy(&exe, &staged).with_context(|| format!("copy to {}", staged.display()))?;
     std::fs::rename(&staged, &paths.binary)?;
     std::fs::write(paths.app.join("Contents/Info.plist"), info_plist())?;
+    let resources = paths.app.join("Contents/Resources");
+    std::fs::create_dir_all(&resources)?;
+    std::fs::write(resources.join("AppIcon.icns"), ICON)?;
     sign(&paths)?;
 
     let mut program = vec![paths.binary.display().to_string()];
@@ -162,6 +168,7 @@ fn info_plist() -> String {
     <key>CFBundleIdentifier</key><string>{LABEL}</string>
     <key>CFBundleName</key><string>macRDP</string>
     <key>CFBundleExecutable</key><string>macrdp</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>{version}</string>
     <key>CFBundleVersion</key><string>{version}</string>

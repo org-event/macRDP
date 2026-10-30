@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon/AppIcon-256.png" width="128" height="128" alt=""></p>
+
 # macRDP
 
 [English version](README.md)
