@@ -168,6 +168,13 @@ impl VirtualDisplay {
         self.id
     }
 
+    /// False once macOS has dropped the display, which happens when all
+    /// displays sleep or the physical ones are unplugged.
+    pub fn is_online(&self) -> bool {
+        // Not CGDisplayIsOnline: it answers nonzero (-1) for a dropped display.
+        online_displays().is_ok_and(|ids| ids.contains(&self.id))
+    }
+
     pub fn set_mode(&mut self, mode: Mode) -> anyhow::Result<()> {
         if mode == self.mode {
             return Ok(());
@@ -311,6 +318,16 @@ fn active_displays() -> anyhow::Result<Vec<u32>> {
     let mut count = 0u32;
     // SAFETY: the buffer holds `ids.len()` entries.
     check(unsafe { CGGetActiveDisplayList(ids.len() as u32, ids.as_mut_ptr(), &mut count) })?;
+    Ok(ids[..count as usize].to_vec())
+}
+
+fn online_displays() -> anyhow::Result<Vec<u32>> {
+    let mut ids = [0u32; 16];
+    let mut count = 0u32;
+    // SAFETY: the buffer holds `ids.len()` entries.
+    check(unsafe {
+        objc2_core_graphics::CGGetOnlineDisplayList(ids.len() as u32, ids.as_mut_ptr(), &mut count)
+    })?;
     Ok(ids[..count as usize].to_vec())
 }
 

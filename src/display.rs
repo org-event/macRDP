@@ -295,6 +295,10 @@ impl MacDisplay {
         let mut slot = self.shared.virtual_display.lock().expect("poisoned");
         // A pending removal must not take a display a client is using again.
         self.shared.session_epoch.fetch_add(1, Ordering::AcqRel);
+        if slot.as_ref().is_some_and(|display| !display.is_online()) {
+            warn!("the virtual display is gone; creating a new one");
+            drop(slot.take());
+        }
         let result = match slot.as_mut() {
             Some(display) => display.set_mode(mode).map(|()| display.id()),
             None => VirtualDisplay::new(mode).map(|display| {

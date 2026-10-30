@@ -24,14 +24,15 @@ const USER_ACTIVE_LOCAL: u32 = 0;
 /// How long a waking display gets before capture is tried anyway.
 const WAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Wakes the display if it sleeps and waits for it: a sleeping display can be
+/// Wakes the displays and waits for the main one: a sleeping display can be
 /// neither captured nor mirrored, and no virtual display can be added.
+///
+/// Declared every time, since a virtual display does not report sleep.
 pub fn wake_display() {
     let main = objc2_core_graphics::CGMainDisplayID();
-    if !objc2_core_graphics::CGDisplayIsAsleep(main) {
-        return;
+    if objc2_core_graphics::CGDisplayIsAsleep(main) {
+        info!("display asleep; waking it for the client");
     }
-    info!("display asleep; waking it for the client");
     let mut id = 0;
     // SAFETY: valid CF string and out-pointer.
     let status = unsafe {
@@ -46,12 +47,14 @@ pub fn wake_display() {
         return;
     }
     let started = Instant::now();
-    while objc2_core_graphics::CGDisplayIsAsleep(main) && started.elapsed() < WAKE_TIMEOUT {
-        std::thread::sleep(Duration::from_millis(100));
+    if objc2_core_graphics::CGDisplayIsAsleep(main) {
+        while objc2_core_graphics::CGDisplayIsAsleep(main) && started.elapsed() < WAKE_TIMEOUT {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        // Displays report awake a moment before they accept configuration.
+        std::thread::sleep(Duration::from_millis(500));
+        debug!(ms = started.elapsed().as_millis(), "display awake");
     }
-    // Displays report awake a moment before they accept configuration.
-    std::thread::sleep(Duration::from_millis(500));
-    debug!(ms = started.elapsed().as_millis(), "display awake");
     // SAFETY: the assertion created above; it would also time out on its own.
     unsafe { IOPMAssertionRelease(id) };
 }
