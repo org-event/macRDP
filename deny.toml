@@ -1,0 +1,51 @@
+# cargo-deny: https://embarkstudios.github.io/cargo-deny/
+# Run with `cargo deny check`.
+
+[graph]
+targets = ["aarch64-apple-darwin"]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# All come through the pinned IronRDP revision and have no fixed version yet.
+# Revisit when IronRDP is updated.
+ignore = [
+    { id = "RUSTSEC-2026-0418", reason = "libz-sys: build-time only, the build script leaks env vars into its build directory" },
+    { id = "RUSTSEC-2023-0071", reason = "rsa (via picky): no fixed release exists; TLS itself runs on rustls/aws-lc" },
+    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile: unmaintained, no known vulnerability" },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe: seekable decompression; the server only compresses" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe: legacy-frame streaming decompression; the server only compresses" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "OpenSSL",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# IronRDP is pinned to a revision with the server-side EGFX we need.
+allow-git = ["https://github.com/Devolutions/IronRDP.git"]

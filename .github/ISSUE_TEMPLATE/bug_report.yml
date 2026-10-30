@@ -1,0 +1,58 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Remove passwords, IP addresses and anything else private from logs before pasting them.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host Mac
+      description: Model, chip and macOS version.
+      placeholder: Mac mini M2 Pro, macOS 27.2
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: RDP client
+      description: Client, its version and the system it runs on.
+      placeholder: Windows App 11.2 on macOS 27.1
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: macRDP version or commit
+      placeholder: v0.1.0 or 3b0b5a2
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How the server runs
+      options:
+        - LaunchAgent (macrdp install)
+        - From a terminal
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of scripts/macrdp-doctor
+      render: text
+  - type: textarea
+    id: log
+    attributes:
+      label: Server log
+      description: The relevant part of ~/Library/Logs/macrdp.log, or terminal output (RUST_LOG=macrdp=debug if you can).
+      render: text

@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      objc2:
+        patterns: ["objc2*", "block2", "dispatch2"]
+      minor-and-patch:
+        update-types: [minor, patch]
+    # IronRDP is pinned to a git revision and is updated by hand.
+    ignore:
+      - dependency-name: "ironrdp-*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
