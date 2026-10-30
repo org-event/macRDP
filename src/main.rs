@@ -230,8 +230,11 @@ unsafe extern "C" {
     -> bool;
 }
 
+/// Logs both grants on every start (`macrdp-doctor` reads that line) and asks
+/// for the missing ones.
 fn check_permissions() {
-    if !objc2_core_graphics::CGPreflightScreenCaptureAccess() {
+    let screen_recording = objc2_core_graphics::CGPreflightScreenCaptureAccess();
+    if !screen_recording {
         warn!("Screen Recording permission missing; requesting it (restart after granting)");
         objc2_core_graphics::CGRequestScreenCaptureAccess();
     }
@@ -247,9 +250,11 @@ fn check_permissions() {
         &[objc2_core_foundation::CFBoolean::new(true)],
     );
     // SAFETY: the dictionary holds the documented option key with a CFBoolean.
-    if !unsafe { AXIsProcessTrustedWithOptions(Some(options.as_opaque())) } {
+    let accessibility = unsafe { AXIsProcessTrustedWithOptions(Some(options.as_opaque())) };
+    if !accessibility {
         warn!(
             "Accessibility permission missing; requested it (restart after granting): remote keyboard and mouse will be ignored"
         );
     }
+    info!(screen_recording, accessibility, "permissions");
 }
