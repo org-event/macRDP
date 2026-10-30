@@ -14,6 +14,8 @@ const LABEL: &str = "com.macrdp.server";
 
 struct Paths {
     app: PathBuf,
+    /// Keeps the TLS identity and the signing keychain.
+    support: PathBuf,
     binary: PathBuf,
     plist: PathBuf,
     log: PathBuf,
@@ -25,6 +27,7 @@ fn paths() -> anyhow::Result<Paths> {
     Ok(Paths {
         binary: app.join("Contents/MacOS/macrdp"),
         app,
+        support: home.join("Library/Application Support/macrdp"),
         plist: home.join(format!("Library/LaunchAgents/{LABEL}.plist")),
         log: home.join("Library/Logs/macrdp.log"),
     })
@@ -45,10 +48,7 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
     std::fs::copy(&exe, &staged).with_context(|| format!("copy to {}", staged.display()))?;
     std::fs::rename(&staged, &paths.binary)?;
     std::fs::write(paths.app.join("Contents/Info.plist"), info_plist())?;
-    run(Command::new("codesign")
-        .args(["--force", "--sign", "-"])
-        .arg(&paths.app))
-    .context("sign macRDP.app")?;
+    sign(&paths)?;
 
     let mut program = vec![paths.binary.display().to_string()];
     program.extend(server_args.iter().cloned());
@@ -61,12 +61,32 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
     println!("Installed {} and started it at login.", paths.app.display());
     println!("Log: {}", paths.log.display());
     println!(
-        "On first start macOS asks for Screen Recording and Accessibility for \"macRDP\": \
-         allow both at the Mac (System Settings cannot be changed remotely), then restart it:\n  \
-         launchctl kickstart -k {}/{LABEL}",
+        "On the first install macOS asks for Screen Recording and Accessibility for \
+         \"macRDP\": allow both at the Mac (System Settings cannot be changed remotely), then \
+         restart it:\n  launchctl kickstart -k {}/{LABEL}\nLater installs keep the grants.",
         domain()
     );
     Ok(())
+}
+
+/// Signs with the local identity, so grants carry over to the next build; ad
+/// hoc when that cannot be set up, which costs the grants on every update.
+fn sign(paths: &Paths) -> anyhow::Result<()> {
+    match crate::signing::Identity::load_or_create(&paths.support)
+        .and_then(|identity| identity.sign(&paths.app, LABEL))
+    {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            eprintln!(
+                "warning: local signing failed ({err:#}); signing ad hoc, so macOS will ask \
+                 for permissions again after every update"
+            );
+            run(Command::new("codesign")
+                .args(["--force", "--sign", "-"])
+                .arg(&paths.app))
+            .context("sign macRDP.app")
+        }
+    }
 }
 
 pub fn uninstall() -> anyhow::Result<()> {
@@ -101,7 +121,7 @@ unsafe extern "C" {
     fn libc_getuid() -> u32;
 }
 
-fn run(command: &mut Command) -> anyhow::Result<()> {
+pub(crate) fn run(command: &mut Command) -> anyhow::Result<()> {
     let output = command
         .output()
         .with_context(|| format!("run {command:?}"))?;
@@ -114,7 +134,7 @@ fn run(command: &mut Command) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn write_private(path: &Path, data: &str) -> anyhow::Result<()> {
+pub(crate) fn write_private(path: &Path, data: &str) -> anyhow::Result<()> {
     use std::io::Write as _;
     use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
     if let Some(dir) = path.parent() {

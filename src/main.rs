@@ -8,6 +8,7 @@ mod encoder;
 mod input;
 mod power;
 mod service;
+mod signing;
 mod tls;
 mod virtual_display;
 
