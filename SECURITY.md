@@ -1,10 +1,10 @@
 # Security policy
 
-macRDP gives remote control of a Mac, so security issues matter a lot here.
+OpenRDP gives remote control of a Mac, so security issues matter a lot here.
 
 ## Reporting a vulnerability
 
-Please **do not open a public issue**. Report it privately through [GitHub's private vulnerability reporting](https://github.com/org-event/macRDP/security/advisories/new) instead. Include what is affected, how to reproduce it, and what an attacker could do with it. You should get a reply within a week.
+Please **do not open a public issue**. Report it privately through [GitHub's private vulnerability reporting](https://github.com/org-event/OpenRDP/security/advisories/new) instead. Include what is affected, how to reproduce it, and what an attacker could do with it. You should get a reply within a week.
 
 ## Supported versions
 

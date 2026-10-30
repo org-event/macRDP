@@ -32,7 +32,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: macRDP version or commit
+      label: OpenRDP version or commit
       placeholder: v0.1.0 or 3b0b5a2
     validations:
       required: true

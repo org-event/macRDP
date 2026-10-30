@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- The project is now called OpenRDP (github.com/org-event/OpenRDP). The binary, app bundle and agent label keep the macrdp names for now.
+
 ### Added
 
 - `scripts/macrdp-doctor`: checks the session, agent, port, permissions, signing, power settings and network, and can wake the display, restart the agent, bring up WireGuard or send Wake-on-LAN.
@@ -22,5 +26,5 @@ First usable version.
 - Power assertions; a connecting client wakes a sleeping display.
 - `macrdp install` / `uninstall`: a LaunchAgent with a locally signed `macRDP.app`, so updates keep the macOS permissions.
 
-[Unreleased]: https://github.com/org-event/macRDP/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/org-event/macRDP/releases/tag/v0.1.0
+[Unreleased]: https://github.com/org-event/OpenRDP/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/org-event/OpenRDP/releases/tag/v0.1.0

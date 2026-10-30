@@ -1,12 +1,14 @@
 <p align="center"><img src="assets/icon/AppIcon-256.png" width="128" height="128" alt=""></p>
 
-# macRDP
+# OpenRDP
 
 [English version](README.md)
 
-RDP-сервер для macOS на [IronRDP](https://github.com/Devolutions/IronRDP). Клиент — любой RDP-клиент с GFX/H.264: Windows App (Mac, Windows, iOS), FreeRDP/Remmina (Linux).
+Открытый RDP-сервер для macOS на [IronRDP](https://github.com/Devolutions/IronRDP). Клиент — любой RDP-клиент с GFX/H.264: Windows App (Mac, Windows, iOS), FreeRDP/Remmina (Linux).
 
-> **Состояние: ранний, но рабочий.** Автор пользуется им каждый день: Mac mini (M2 Pro, macOS 27), клиент — MacBook через WireGuard. Открытые вопросы — в [docs/plan.md](docs/plan.md). Пока только Apple Silicon.
+> **Состояние: ранний, но рабочий.** Автор пользуется им каждый день: Mac mini (M2 Pro, macOS 27), клиент — MacBook через WireGuard. Открытые вопросы — в [docs/plan.md](docs/plan.md). Пока только Apple Silicon, позже — Linux.
+
+> Раньше проект назывался macRDP, и бинарник, приложение и агент пока называются так же: `macrdp`, `macRDP.app`, `com.macrdp.server`. Их переименуем в одном из следующих релизов — после этого macOS заново спросит права.
 
 Как устроено:
 

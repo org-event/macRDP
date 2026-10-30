@@ -1,4 +1,4 @@
-# Contributing to macRDP
+# Contributing to OpenRDP
 
 Thanks for your interest! Bug reports, test results on other Macs and clients, and pull requests are all welcome. Issues and pull requests can be written in English or Russian.
 
@@ -11,8 +11,8 @@ Thanks for your interest! Bug reports, test results on other Macs and clients, a
 ## Development setup
 
 ```bash
-git clone https://github.com/org-event/macRDP.git
-cd macRDP
+git clone https://github.com/org-event/OpenRDP.git
+cd OpenRDP
 cargo build
 cargo test
 ```
