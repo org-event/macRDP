@@ -239,7 +239,10 @@ impl Shared {
         }
         let epoch = self.session_epoch.load(Ordering::Acquire);
         let shared = Arc::clone(self);
-        info!(seconds = delay.as_secs(), "keeping the virtual display for a reconnect");
+        info!(
+            seconds = delay.as_secs(),
+            "keeping the virtual display for a reconnect"
+        );
         let spawned = std::thread::Builder::new()
             .name("macrdp-keep-display".into())
             .spawn(move || {
@@ -330,6 +333,7 @@ impl RdpServerDisplay for MacDisplay {
     }
 
     async fn request_initial_size(&mut self, client_size: DesktopSize) -> DesktopSize {
+        crate::power::wake_display();
         if self.virtual_enabled() {
             let (width, height) = (u32::from(client_size.width), u32::from(client_size.height));
             info!(width, height, "client desktop size");
@@ -361,7 +365,12 @@ impl RdpServerDisplay for MacDisplay {
             monitors = monitors.len(),
             "client layout"
         );
-        self.wanted = Some(Mode::for_client(width, height, scale, self.config.max_pixels));
+        self.wanted = Some(Mode::for_client(
+            width,
+            height,
+            scale,
+            self.config.max_pixels,
+        ));
         self.sync_virtual_display();
     }
 
@@ -369,7 +378,8 @@ impl RdpServerDisplay for MacDisplay {
         &mut self,
         ctx: DisplayContext,
     ) -> ServerResult<Box<dyn RdpServerDisplayUpdates>> {
-        // The display may have gone while the client was away.
+        // The display may have gone, or fallen asleep, while the client was away.
+        crate::power::wake_display();
         self.sync_virtual_display();
         let session = Session::start(self.config, Arc::clone(&self.shared), ctx)
             .map_err(|e| ServerError::custom("display", std::io::Error::other(format!("{e:#}"))))?;
@@ -441,7 +451,10 @@ impl Drop for Session {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         self.shared.slot.poke();
-        for thread in [self.thread.take(), self.cursor_thread.take()].into_iter().flatten() {
+        for thread in [self.thread.take(), self.cursor_thread.take()]
+            .into_iter()
+            .flatten()
+        {
             let _ = thread.join();
         }
         self.shared.sessions.fetch_sub(1, Ordering::AcqRel);
@@ -479,7 +492,10 @@ fn watch_cursor(
         }
         if let Some(pointer) = watch.changed(screen.scale) {
             debug!(?pointer, "cursor changed");
-            if updates.send(ironrdp_server::DisplayUpdate::RGBAPointer(pointer)).is_err() {
+            if updates
+                .send(ironrdp_server::DisplayUpdate::RGBAPointer(pointer))
+                .is_err()
+            {
                 return;
             }
         }
