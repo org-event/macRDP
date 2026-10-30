@@ -2,6 +2,14 @@
 name = "macrdp"
 version = "0.1.0"
 edition = "2024"
+description = "RDP server for macOS on Apple Silicon: ScreenCaptureKit, VideoToolbox H.264, EGFX"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/org-event/macRDP"
+readme = "README.md"
+keywords = ["rdp", "macos", "remote-desktop", "ironrdp", "screencapturekit"]
+categories = ["network-programming", "multimedia::video"]
+# Depends on IronRDP by git revision, which crates.io does not accept.
+publish = false
 
 [dependencies]
 anyhow = "1.0.104"
