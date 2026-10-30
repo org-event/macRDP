@@ -74,9 +74,13 @@ struct Args {
 
 /// `WxH` as a pixel count.
 fn parse_area(value: &str) -> anyhow::Result<u32> {
-    let (w, h) = value.split_once('x').context("expected WxH, like 2560x1600")?;
+    let (w, h) = value
+        .split_once('x')
+        .context("expected WxH, like 2560x1600")?;
     let (w, h): (u32, u32) = (w.parse()?, h.parse()?);
-    w.checked_mul(h).filter(|&area| area > 0).context("size out of range")
+    w.checked_mul(h)
+        .filter(|&area| area > 0)
+        .context("size out of range")
 }
 
 fn parse_args(args: Vec<std::ffi::OsString>) -> anyhow::Result<Option<Args>> {

@@ -57,7 +57,10 @@ impl Mode {
         let fit = |value: u32, max: u32, step: u32| (value.clamp(2 * step, max) / step) * step;
         let mut hidpi = scale >= 175 || retina(width, height);
         let step = if hidpi { 2 } else { 1 };
-        let (full_w, full_h) = (fit(width, MAX_PIXELS.0, step), fit(height, MAX_PIXELS.1, step));
+        let (full_w, full_h) = (
+            fit(width, MAX_PIXELS.0, step),
+            fit(height, MAX_PIXELS.1, step),
+        );
         let area = f64::from(full_w) * f64::from(full_h);
         let mut factor = (f64::from(max_pixels) / area).sqrt().min(1.0);
         let scaled = |factor: f64| {
@@ -375,7 +378,10 @@ mod tests {
         );
         // Still Retina-sized after scaling: stays HiDPI on even pixels.
         let mode = Mode::for_client(4096, 2560, 200, 3200 * 2000);
-        assert!(mode.hidpi && mode.width * mode.height <= 3200 * 2000, "{mode:?}");
+        assert!(
+            mode.hidpi && mode.width * mode.height <= 3200 * 2000,
+            "{mode:?}"
+        );
         assert_eq!((mode.width % 2, mode.height % 2), (0, 0));
     }
 }

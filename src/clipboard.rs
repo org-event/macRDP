@@ -11,9 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use ironrdp_cliprdr::backend::{
-    ClipboardMessage, CliprdrBackend, CliprdrBackendFactory,
-};
+use ironrdp_cliprdr::backend::{ClipboardMessage, CliprdrBackend, CliprdrBackendFactory};
 use ironrdp_cliprdr::pdu::{
     ClipboardFormat, ClipboardFormatId, ClipboardFormatName, ClipboardGeneralCapabilityFlags,
     FileContentsRequest, FileContentsResponse, FormatDataRequest, FormatDataResponse, LockDataId,
@@ -152,7 +150,8 @@ impl MacClipboard {
 
     fn request_next(&mut self) {
         if let Some(&(_, format)) = self.incoming.queue.front() {
-            self.shared.send(ClipboardMessage::SendInitiatePaste(format));
+            self.shared
+                .send(ClipboardMessage::SendInitiatePaste(format));
             return;
         }
         let Incoming { text, png, .. } = std::mem::take(&mut self.incoming);
@@ -196,20 +195,29 @@ impl CliprdrBackend for MacClipboard {
         self.shared.in_background(Shared::announce);
     }
 
-    fn on_process_negotiated_capabilities(&mut self, capabilities: ClipboardGeneralCapabilityFlags) {
+    fn on_process_negotiated_capabilities(
+        &mut self,
+        capabilities: ClipboardGeneralCapabilityFlags,
+    ) {
         debug!(?capabilities, "clipboard capabilities");
     }
 
     fn on_remote_copy(&mut self, available_formats: &[ClipboardFormat]) {
         debug!(?available_formats, "client clipboard changed");
         let find = |wanted: &dyn Fn(&ClipboardFormat) -> bool| {
-            available_formats.iter().find(|f| wanted(f)).map(ClipboardFormat::id)
+            available_formats
+                .iter()
+                .find(|f| wanted(f))
+                .map(ClipboardFormat::id)
         };
         let mut queue = VecDeque::new();
         if let Some(id) = find(&|f| f.id() == ClipboardFormatId::CF_UNICODETEXT) {
             queue.push_back((Fetch::Text, id));
         }
-        let png = find(&|f| f.name().is_some_and(|n| n.value().eq_ignore_ascii_case(PNG_NAME)));
+        let png = find(&|f| {
+            f.name()
+                .is_some_and(|n| n.value().eq_ignore_ascii_case(PNG_NAME))
+        });
         let dib = find(&|f| f.id() == ClipboardFormatId::CF_DIBV5)
             .or_else(|| find(&|f| f.id() == ClipboardFormatId::CF_DIB));
         // PNG first; the bitmap is the fallback if the client cannot render it.
@@ -254,7 +262,9 @@ impl CliprdrBackend for MacClipboard {
                 },
                 Fetch::Png => {
                     self.incoming.png = Some(response.data().to_vec());
-                    self.incoming.queue.retain(|&(fetch, _)| fetch != Fetch::Dib);
+                    self.incoming
+                        .queue
+                        .retain(|&(fetch, _)| fetch != Fetch::Dib);
                 }
                 Fetch::Dib => {
                     let data = response.data();
@@ -307,8 +317,13 @@ fn local_formats() -> Vec<ClipboardFormat> {
         return formats;
     };
     // SAFETY: AppKit's pasteboard type constants.
-    let (string, png, tiff) =
-        unsafe { (NSPasteboardTypeString, NSPasteboardTypePNG, NSPasteboardTypeTIFF) };
+    let (string, png, tiff) = unsafe {
+        (
+            NSPasteboardTypeString,
+            NSPasteboardTypePNG,
+            NSPasteboardTypeTIFF,
+        )
+    };
     let has = |wanted: &NSString| types.iter().any(|t| &*t == wanted);
     if has(string) {
         formats.push(ClipboardFormat::new(ClipboardFormatId::CF_UNICODETEXT));
@@ -327,7 +342,9 @@ fn local_data(format: ClipboardFormatId) -> Option<OwnedFormatDataResponse> {
     if format == ClipboardFormatId::CF_UNICODETEXT {
         // SAFETY: AppKit's pasteboard type constant.
         let text = pasteboard.stringForType(unsafe { NSPasteboardTypeString })?;
-        return Some(OwnedFormatDataResponse::new_unicode_string(&text.to_string()));
+        return Some(OwnedFormatDataResponse::new_unicode_string(
+            &text.to_string(),
+        ));
     }
     let png = local_png(&pasteboard)?;
     if format == PNG_FORMAT {

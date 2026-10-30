@@ -7,9 +7,9 @@ use std::ffi::c_void;
 use std::hash::{Hash as _, Hasher as _};
 
 use ironrdp_server::RGBAPointer;
+use objc2::msg_send;
 use objc2::rc::autoreleasepool;
 use objc2::runtime::{AnyClass, AnyObject};
-use objc2::msg_send;
 use objc2_core_foundation::{CFRetained, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{CGColorSpace, CGContext, CGImage};
 
@@ -130,9 +130,16 @@ fn rasterize(image: &CGImage, width: usize, height: usize) -> Option<Vec<u8>> {
         for pixel in row.as_chunks::<4>().0 {
             let alpha = u32::from(pixel[3]);
             let straight = |c: u8| {
-                (u32::from(c) * 255).checked_div(alpha).map_or(0, |v| v.min(255) as u8)
+                (u32::from(c) * 255)
+                    .checked_div(alpha)
+                    .map_or(0, |v| v.min(255) as u8)
             };
-            out.extend_from_slice(&[straight(pixel[0]), straight(pixel[1]), straight(pixel[2]), pixel[3]]);
+            out.extend_from_slice(&[
+                straight(pixel[0]),
+                straight(pixel[1]),
+                straight(pixel[2]),
+                pixel[3],
+            ]);
         }
     }
     Some(out)
@@ -149,8 +156,14 @@ mod tests {
             pointer.data.len(),
             usize::from(pointer.width) * usize::from(pointer.height) * 4
         );
-        assert!(pointer.data.as_chunks::<4>().0.iter().any(|p| p[3] == 255), "opaque pixels");
-        assert!(pointer.data.as_chunks::<4>().0.iter().any(|p| p[3] == 0), "transparent pixels");
+        assert!(
+            pointer.data.as_chunks::<4>().0.iter().any(|p| p[3] == 255),
+            "opaque pixels"
+        );
+        assert!(
+            pointer.data.as_chunks::<4>().0.iter().any(|p| p[3] == 0),
+            "transparent pixels"
+        );
         println!("{pointer:?}");
     }
 }

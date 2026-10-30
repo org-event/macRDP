@@ -45,14 +45,18 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
     std::fs::copy(&exe, &staged).with_context(|| format!("copy to {}", staged.display()))?;
     std::fs::rename(&staged, &paths.binary)?;
     std::fs::write(paths.app.join("Contents/Info.plist"), info_plist())?;
-    run(Command::new("codesign").args(["--force", "--sign", "-"]).arg(&paths.app))
-        .context("sign macRDP.app")?;
+    run(Command::new("codesign")
+        .args(["--force", "--sign", "-"])
+        .arg(&paths.app))
+    .context("sign macRDP.app")?;
 
     let mut program = vec![paths.binary.display().to_string()];
     program.extend(server_args.iter().cloned());
     write_private(&paths.plist, &agent_plist(&program, password, &paths.log))?;
-    run(Command::new("launchctl").args(["bootstrap", &domain()]).arg(&paths.plist))
-        .context("start the agent")?;
+    run(Command::new("launchctl")
+        .args(["bootstrap", &domain()])
+        .arg(&paths.plist))
+    .context("start the agent")?;
 
     println!("Installed {} and started it at login.", paths.app.display());
     println!("Log: {}", paths.log.display());
@@ -98,7 +102,9 @@ unsafe extern "C" {
 }
 
 fn run(command: &mut Command) -> anyhow::Result<()> {
-    let output = command.output().with_context(|| format!("run {command:?}"))?;
+    let output = command
+        .output()
+        .with_context(|| format!("run {command:?}"))?;
     if !output.status.success() {
         bail!(
             "{command:?} failed: {}",
