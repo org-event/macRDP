@@ -58,15 +58,12 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
     let removed = removed || remove_legacy(&home_dir()?)?;
     stop();
 
-    let macos = paths.binary.parent().expect("inside the bundle");
-    std::fs::create_dir_all(macos).with_context(|| format!("create {}", macos.display()))?;
     let exe = std::env::current_exe().context("locate this binary")?;
-    // Replace rather than overwrite in place: the old file may be mapped by a
-    // process that is still exiting.
-    let staged = paths.binary.with_extension("new");
-    std::fs::copy(&exe, &staged).with_context(|| format!("copy to {}", staged.display()))?;
-    std::fs::rename(&staged, &paths.binary)?;
-    std::fs::write(paths.app.join("Contents/Info.plist"), info_plist())?;
+    stage_binary(&paths.binary, &exe)?;
+    std::fs::write(
+        paths.app.join("Contents/Info.plist"),
+        info_plist(env!("CARGO_PKG_VERSION")),
+    )?;
     let resources = paths.app.join("Contents/Resources");
     std::fs::create_dir_all(&resources)?;
     std::fs::write(resources.join("AppIcon.icns"), ICON)?;
@@ -100,6 +97,53 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
         );
     }
     Ok(())
+}
+
+/// Replaces the installed binary with `new_binary`, signs it again and restarts
+/// the agent. The agent's arguments and password stay as they are.
+pub fn apply_update(new_binary: &Path, version: &str) -> anyhow::Result<()> {
+    let paths = paths()?;
+    if !paths.app.is_dir() {
+        bail!("{} is not installed", paths.app.display());
+    }
+    stage_binary(&paths.binary, new_binary)?;
+    std::fs::write(paths.app.join("Contents/Info.plist"), info_plist(version))?;
+    sign(&paths)?;
+    run(Command::new("launchctl").args(["kickstart", "-k", &format!("{}/{LABEL}", domain())]))
+        .context("restart the agent")
+}
+
+/// Whether this process is the installed app, rather than a copy run by hand.
+pub fn running_from_app() -> bool {
+    let Ok(paths) = paths() else {
+        return false;
+    };
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    same_file(&exe, &paths.binary)
+}
+
+/// Replace rather than overwrite in place: the old file may be mapped by a
+/// process that is still exiting.
+fn stage_binary(dest: &Path, source: &Path) -> anyhow::Result<()> {
+    let macos = dest.parent().context("bundle executable path")?;
+    std::fs::create_dir_all(macos).with_context(|| format!("create {}", macos.display()))?;
+    let staged = dest.with_extension("new");
+    std::fs::copy(source, &staged).with_context(|| format!("copy to {}", staged.display()))?;
+    std::fs::rename(&staged, dest)?;
+    let _ = Command::new("xattr")
+        .args(["-d", "com.apple.quarantine"])
+        .arg(dest)
+        .status();
+    Ok(())
+}
+
+fn same_file(left: &Path, right: &Path) -> bool {
+    match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
 }
 
 /// Signs with the local identity, so grants carry over to the next build; ad
@@ -214,7 +258,7 @@ pub(crate) fn write_private(path: &Path, data: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn info_plist() -> String {
+fn info_plist(version: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -230,8 +274,7 @@ fn info_plist() -> String {
     <key>LSUIElement</key><true/>
 </dict>
 </plist>
-"#,
-        version = env!("CARGO_PKG_VERSION")
+"#
     )
 }
 

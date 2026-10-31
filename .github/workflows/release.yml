@@ -43,6 +43,7 @@ jobs:
           Apple Silicon build. The binary is not notarized: after downloading, run
           `xattr -d com.apple.quarantine openrdp`, then `./openrdp install --user <NAME> --pass <PASSWORD>`.
           `install` signs the app with a local certificate, so later updates keep the macOS permissions.
+          A running server asks before installing a newer release.
 
           See CHANGELOG.md for the changes.
           EOF

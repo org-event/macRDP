@@ -10,6 +10,7 @@ mod power;
 mod service;
 mod signing;
 mod tls;
+mod update;
 mod virtual_display;
 
 use std::net::SocketAddr;
@@ -52,6 +53,10 @@ OPTIONS:
   --cert <PEM> --key <PEM>
                       TLS identity [default: self-signed, kept in
                       ~/Library/Application Support/openrdp]
+  --update <ask|auto|off>
+                      ask before installing a newer GitHub release [default: ask];
+                      auto installs it, off does not check
+  --no-update         same as --update off
 
 Password may also come from OPENRDP_PASSWORD. Logs: RUST_LOG=openrdp=debug.
 ";
@@ -71,6 +76,7 @@ struct Args {
     clipboard: bool,
     cert: Option<std::path::PathBuf>,
     key: Option<std::path::PathBuf>,
+    update: update::Mode,
 }
 
 /// `WxH` as a pixel count.
@@ -124,6 +130,11 @@ fn parse_args(args: Vec<std::ffi::OsString>) -> anyhow::Result<Option<Args>> {
         clipboard: !args.contains("--no-clipboard"),
         cert: args.opt_value_from_str("--cert")?,
         key: args.opt_value_from_str("--key")?,
+        update: {
+            let disabled = args.contains("--no-update");
+            let flag: Option<String> = args.opt_value_from_str("--update")?;
+            update::mode(disabled, flag.as_deref())?
+        },
     };
     let rest = args.finish();
     if !rest.is_empty() {
@@ -221,6 +232,8 @@ async fn main() -> anyhow::Result<()> {
     }));
 
     info!(bind = %args.bind, hybrid = args.hybrid, "listening");
+    let update = args.update;
+    tokio::task::spawn_blocking(move || update::watch(update));
     server.run().await.context("server")
 }
 

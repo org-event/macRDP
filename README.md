@@ -66,6 +66,8 @@ If an older install is still on disk, `install` removes that agent, `~/Applicati
 
 After updating the build, run `install` again. It signs the app with a local certificate from a separate keychain in `~/Library/Application Support/openrdp`, so macOS recognises the new build as the same app and keeps the permissions. `openrdp uninstall` removes both the agent and the app.
 
+While the server is running it checks GitHub for a newer release. A dialog asks before installing; the connection drops for a moment while the new build replaces the app and the agent restarts. `--update auto` installs without asking, `--update off` does not check. "Later" asks again the next day.
+
 **The server does not run at the login window.** It starts only after you log in. After a reboot with FileVault on, unlocking the disk over SSH does not log you in: connect with Screen Sharing (VNC) and log in there, for example through an SSH tunnel, `ssh -N -L 5901:127.0.0.1:5900 you@mac` and then `vnc://127.0.0.1:5901`. Another option is `sudo fdesetup authrestart` before the reboot.
 
 ## Health check and wake: `openrdp-doctor`
