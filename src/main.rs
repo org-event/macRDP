@@ -1,5 +1,6 @@
 //! OpenRDP: an RDP server for macOS built on IronRDP.
 
+mod broker;
 mod capture;
 mod clipboard;
 mod cursor;
@@ -17,7 +18,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
-use ironrdp_server::{Credentials, RdpServer};
+use ironrdp_server::{Credentials, RdpServer, ServerError, ServerErrorKind};
 use objc2_core_graphics::CGMainDisplayID;
 use tracing::{info, warn};
 
@@ -31,7 +32,8 @@ USAGE:
   openrdp --user <NAME> --pass <PASSWORD> [OPTIONS]
   openrdp install --user <NAME> --pass <PASSWORD> [OPTIONS]
                       run at login as ~/Applications/OpenRDP.app (LaunchAgent)
-  openrdp uninstall    remove it
+                      and serve the login window (asks for an administrator password)
+  openrdp uninstall    remove the agent, the app and the login-window service
 
 OPTIONS:
   --bind <ADDR>       listen address [default: 0.0.0.0:3389]
@@ -162,8 +164,48 @@ fn install(argv: Vec<std::ffi::OsString>) -> anyhow::Result<()> {
     service::install(&server_args, &args.pass)
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    let mut argv: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    // The login-window process joins that session as root, then drops to the
+    // installing user. That has to happen before any other thread exists.
+    match argv.first().and_then(|arg| arg.to_str()) {
+        Some("login-window") => argv = broker::prepare_login_window()?,
+        Some("broker") => {
+            init_tracing();
+            return broker::run();
+        }
+        Some("install-system") => {
+            init_tracing();
+            let path = argv
+                .get(1)
+                .context("install-system needs the staged config path")?;
+            return broker::install_system(std::path::Path::new(path));
+        }
+        Some("uninstall-system") => {
+            init_tracing();
+            return broker::uninstall_system();
+        }
+        Some("uninstall") => {
+            init_tracing();
+            return service::uninstall();
+        }
+        Some("install") => {
+            init_tracing();
+            argv.remove(0);
+            return install(argv);
+        }
+        _ => {}
+    }
+
+    init_tracing();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("runtime")?;
+    runtime.block_on(serve(argv))
+}
+
+fn init_tracing() {
     use std::io::IsTerminal as _;
     tracing_subscriber::fmt()
         .with_ansi(std::io::stdout().is_terminal())
@@ -172,21 +214,22 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or_else(|_| "openrdp=info,warn".into()),
         )
         .init();
+}
 
-    let mut argv: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
-    match argv.first().and_then(|a| a.to_str()) {
-        Some("uninstall") => return service::uninstall(),
-        Some("install") => {
-            argv.remove(0);
-            return install(argv);
-        }
-        _ => {}
-    }
-
-    let Some(args) = parse_args(argv).inspect_err(|_| eprintln!("{HELP}"))? else {
+async fn serve(argv: Vec<std::ffi::OsString>) -> anyhow::Result<()> {
+    let Some(mut args) = parse_args(argv).inspect_err(|_| eprintln!("{HELP}"))? else {
         print!("{HELP}");
         return Ok(());
     };
+    // No virtual display and no update dialog: the login window is the physical
+    // screen, and nobody is there to answer a prompt. The pasteboard is not the
+    // user's yet.
+    if broker::login_window_requested() {
+        args.fixed_size = true;
+        args.clipboard = false;
+        args.update = update::Mode::Off;
+        info!("login window");
+    }
 
     if !args.test_pattern {
         check_permissions();
@@ -234,7 +277,31 @@ async fn main() -> anyhow::Result<()> {
     info!(bind = %args.bind, hybrid = args.hybrid, "listening");
     let update = args.update;
     tokio::task::spawn_blocking(move || update::watch(update));
-    server.run().await.context("server")
+    // The login-window process and the user agent overlap for a moment at login
+    // and logout. Wait out "address already in use" instead of exiting: launchd
+    // would then pause the agent for its throttle interval.
+    let mut logged = false;
+    for _ in 0..40 {
+        match server.run().await {
+            Ok(()) => return Ok(()),
+            Err(err) if is_addr_in_use(&err) => {
+                if !logged {
+                    warn!(bind = %args.bind, "port is in use, waiting for it");
+                    logged = true;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            Err(err) => return Err(err).context("server"),
+        }
+    }
+    bail!("port {} stayed in use", args.bind)
+}
+
+fn is_addr_in_use(err: &ServerError) -> bool {
+    matches!(
+        err.kind(),
+        ServerErrorKind::Io(io) if io.kind() == std::io::ErrorKind::AddrInUse
+    )
 }
 
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -270,4 +337,25 @@ fn check_permissions() {
         );
     }
     info!(screen_recording, accessibility, "permissions");
+}
+
+#[cfg(test)]
+mod tests {
+    use ironrdp_server::ServerErrorExt as _;
+
+    use super::*;
+
+    #[test]
+    fn only_a_busy_port_is_retried() {
+        let busy = ServerError::io(
+            "bind listen address",
+            std::io::Error::new(std::io::ErrorKind::AddrInUse, "in use"),
+        );
+        let denied = ServerError::io(
+            "bind listen address",
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no"),
+        );
+        assert!(is_addr_in_use(&busy));
+        assert!(!is_addr_in_use(&denied));
+    }
 }

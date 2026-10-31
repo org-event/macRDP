@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- The login window is served by a root LaunchDaemon. `openrdp install` asks for an administrator password once and starts the server in that window's session as the installing user, so the existing Screen Recording and Accessibility grants apply. Logging in hands the port to the LaunchAgent; the client connects again.
+
 ## [1.1.0] - 2026-10-31
 
 ### Added

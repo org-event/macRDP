@@ -64,11 +64,13 @@ launchctl kickstart -k gui/$(id -u)/com.openrdp.server
 
 If an older install is still on disk, `install` removes that agent, `~/Applications/macRDP.app`, its log and `~/Library/Application Support/macrdp`. Nothing is carried over, so macOS asks for Screen Recording and Accessibility again.
 
-After updating the build, run `install` again. It signs the app with a local certificate from a separate keychain in `~/Library/Application Support/openrdp`, so macOS recognises the new build as the same app and keeps the permissions. `openrdp uninstall` removes both the agent and the app.
+After updating the build, run `install` again. It signs the app with a local certificate from a separate keychain in `~/Library/Application Support/openrdp`, so macOS recognises the new build as the same app and keeps the permissions. `openrdp uninstall` removes the agent, the app and the login-window service.
 
 While the server is running it checks GitHub for a newer release. A dialog asks before installing; the connection drops for a moment while the new build replaces the app and the agent restarts. `--update auto` installs without asking, `--update off` does not check. "Later" asks again the next day.
 
-**The server does not run at the login window.** It starts only after you log in. After a reboot with FileVault on, unlocking the disk over SSH does not log you in: connect with Screen Sharing (VNC) and log in there, for example through an SSH tunnel, `ssh -N -L 5901:127.0.0.1:5900 you@mac` and then `vnc://127.0.0.1:5901`. Another option is `sudo fdesetup authrestart` before the reboot.
+`install` also installs a LaunchDaemon, `com.openrdp.broker`, and asks for an administrator password once. While the Mac shows the login window, the daemon starts this same server inside that window's session, running as the user who installed it, so the Screen Recording and Accessibility grants already given to OpenRDP apply. The stream is the physical display at its current size. Keys typed in the RDP client go to the login window, including the Mac password. After a successful login the daemon stops that process and the LaunchAgent takes over; the client connects again. Logging out returns the server to the login window.
+
+The FileVault screen before macOS has booted is still out of reach. RDP starts once the disk is unlocked and the login window is up. Until then, Screen Sharing can log you in: `ssh -N -L 5901:127.0.0.1:5900 you@mac` and then `vnc://127.0.0.1:5901`.
 
 ## Health check and wake: `openrdp-doctor`
 
@@ -87,7 +89,6 @@ On another machine, `openrdp-doctor wol <MAC> [broadcast]` sends a Wake-on-LAN p
 
 The roadmap and design notes are in [docs/plan.md](docs/plan.md) (in Russian). Main gaps:
 
-- the login window: a LaunchDaemon that serves before anyone logs in;
 - AVC444 for sharper text;
 - adaptive bitrate and frame rate;
 - sound, drive redirection, file copy through the clipboard;

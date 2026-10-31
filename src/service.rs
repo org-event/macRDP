@@ -5,6 +5,9 @@
 //! a LaunchAgent starts it in the user's session and restarts it if it exits.
 //! The password goes into the agent's plist, readable only by the user.
 //!
+//! The login window is a separate GUI session, so the agent is not enough.
+//! [`crate::broker`] installs a root LaunchDaemon that starts this same app there.
+//!
 //! A previous install under the old names is deleted here: the agent, the app,
 //! the plist, the log and `~/Library/Application Support/macrdp`. Nothing is
 //! carried over. The new app is a different identity, so macOS asks for the
@@ -71,7 +74,7 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
 
     let mut program = vec![paths.binary.display().to_string()];
     program.extend(server_args.iter().cloned());
-    write_private(&paths.plist, &agent_plist(&program, password, &paths.log))?;
+    write_private(&paths.plist, agent_plist(&program, password, &paths.log))?;
     run(Command::new("launchctl")
         .args(["bootstrap", &domain()])
         .arg(&paths.plist))
@@ -84,7 +87,8 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
             "Removed the previous install. macOS treats \"{BUNDLE_NAME}\" as a new app, so \
              Screen Recording and Accessibility have to be granted again at the Mac (System \
              Settings cannot be changed remotely). Then restart it:\n  \
-             launchctl kickstart -k {}/{LABEL}",
+             launchctl kickstart -k {}/{LABEL}\n\
+             The same two grants cover the login window.",
             domain()
         );
     } else {
@@ -92,11 +96,11 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
             "On the first install macOS asks for Screen Recording and Accessibility for \
              \"{BUNDLE_NAME}\": allow both at the Mac (System Settings cannot be changed \
              remotely), then restart it:\n  launchctl kickstart -k {}/{LABEL}\n\
-             Later installs keep the grants.",
+             Later installs keep the grants. The same two grants cover the login window.",
             domain()
         );
     }
-    Ok(())
+    crate::broker::request_install(&paths.binary, server_args, password)
 }
 
 /// Replaces the installed binary with `new_binary`, signs it again and restarts
@@ -110,7 +114,22 @@ pub fn apply_update(new_binary: &Path, version: &str) -> anyhow::Result<()> {
     std::fs::write(paths.app.join("Contents/Info.plist"), info_plist(version))?;
     sign(&paths)?;
     run(Command::new("launchctl").args(["kickstart", "-k", &format!("{}/{LABEL}", domain())]))
-        .context("restart the agent")
+        .context("restart the agent")?;
+    // The broker is root and keeps running across an update. Passwordless sudo
+    // restarts it so it loads the new binary; otherwise it does on the next boot.
+    let _ = Command::new("/usr/bin/sudo")
+        .args([
+            "-n",
+            "/bin/launchctl",
+            "kickstart",
+            "-k",
+            "system/com.openrdp.broker",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    Ok(())
 }
 
 /// Whether this process is the installed app, rather than a copy run by hand.
@@ -168,6 +187,9 @@ fn sign(paths: &Paths) -> anyhow::Result<()> {
 
 pub fn uninstall() -> anyhow::Result<()> {
     let paths = paths()?;
+    if paths.binary.is_file() {
+        crate::broker::request_uninstall(&paths.binary)?;
+    }
     stop();
     if paths.plist.exists() {
         std::fs::remove_file(&paths.plist)
@@ -239,7 +261,7 @@ pub(crate) fn run(command: &mut Command) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn write_private(path: &Path, data: &str) -> anyhow::Result<()> {
+pub(crate) fn write_private(path: &Path, data: impl AsRef<[u8]>) -> anyhow::Result<()> {
     use std::io::Write as _;
     use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
     if let Some(dir) = path.parent() {
@@ -254,7 +276,7 @@ pub(crate) fn write_private(path: &Path, data: &str) -> anyhow::Result<()> {
         .with_context(|| format!("write {}", path.display()))?;
     // An existing file keeps its mode on open; tighten it either way.
     file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    file.write_all(data.as_bytes())?;
+    file.write_all(data.as_ref())?;
     Ok(())
 }
 
@@ -311,7 +333,7 @@ fn agent_plist(program: &[String], password: &str, log: &Path) -> String {
     )
 }
 
-fn escape(value: &str) -> String {
+pub(crate) fn escape(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('<', "&lt;")

@@ -13,5 +13,5 @@ Only the latest release and `main` get fixes.
 ## Deployment advice
 
 - Do not expose port 3389 to the internet. Reach the Mac through a VPN such as WireGuard, or through an SSH tunnel.
-- Use a long, unique server password. It is stored in the LaunchAgent plist, readable only by your user.
+- Use a long, unique server password. It is stored in the LaunchAgent plist, readable only by your user, and in the root-only broker config when the login window is served (`/Library/Application Support/openrdp/broker.conf`, mode 600).
 - The default TLS certificate is self-signed. Clients cannot tell it apart from an attacker's certificate the first time they connect, so check its fingerprint, or pass your own with `--cert` and `--key`.

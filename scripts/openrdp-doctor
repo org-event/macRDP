@@ -2,8 +2,8 @@
 # openrdp-doctor: checks what remote access to this Mac depends on, and fixes
 # the common cases. Meant to be run on the host, usually over SSH.
 #
-#   openrdp-doctor [check]          report on session, agent, port, permissions,
-#                                  signing, power and network
+#   openrdp-doctor [check]          report on session, agent, login window, port,
+#                                  permissions, signing, power and network
 #   openrdp-doctor wake             wake the display
 #   openrdp-doctor restart          restart the OpenRDP agent
 #   openrdp-doctor vpn              bring up WireGuard tunnels (needs a login)
@@ -15,6 +15,8 @@
 set -u
 
 LABEL=com.openrdp.server
+BROKER=com.openrdp.broker
+BROKER_LOG=/Library/Logs/openrdp-broker.log
 APP="$HOME/Applications/OpenRDP.app"
 LOG="$HOME/Library/Logs/openrdp.log"
 PORT="${OPENRDP_PORT:-3389}"
@@ -47,6 +49,16 @@ console_user() {
     stat -f %Su /dev/console 2>/dev/null
 }
 
+at_login_window() {
+    local user
+    user="$(console_user)"
+    [ "$user" = root ] || [ -z "$user" ]
+}
+
+broker_loaded() {
+    launchctl print "system/$BROKER" >/dev/null 2>&1
+}
+
 check_system() {
     section "System"
     local arch version
@@ -62,16 +74,23 @@ check_system() {
     user="$(console_user)"
     if [ "$user" = "$(id -un)" ]; then
         ok "logged in at the Mac as $user"
-    elif [ "$user" = root ] || [ -z "$user" ]; then
-        fail "nobody is logged in (login window): the agent and WireGuard do not run"
-        hint "log in through Screen Sharing: ssh -N -L 5901:127.0.0.1:5900 $(id -un)@<this mac>, then vnc://127.0.0.1:5901"
-        hint "next time, reboot with: sudo fdesetup authrestart"
+    elif at_login_window; then
+        if broker_loaded && listening "$PORT"; then
+            ok "login window; OpenRDP is serving it"
+        elif broker_loaded; then
+            fail "login window; $BROKER is loaded but nothing listens on port $PORT"
+            hint "see $BROKER_LOG and $LOG"
+        else
+            fail "login window, and the login-window service is not installed"
+            hint "openrdp install --user <NAME> --pass <PASSWORD>  (administrator password once)"
+            hint "until then, Screen Sharing: ssh -N -L 5901:127.0.0.1:5900 $(id -un)@<this mac>, then vnc://127.0.0.1:5901"
+        fi
     else
         warn "the Mac's screen belongs to $user, not $(id -un)"
     fi
 
     if fdesetup status 2>/dev/null | grep -q "On"; then
-        ok "FileVault on (after a reboot someone has to log in before OpenRDP starts)"
+        ok "FileVault on (OpenRDP serves the login window after the disk is unlocked, not the preboot screen)"
     else
         ok "FileVault off"
     fi
@@ -98,7 +117,14 @@ check_agent() {
     fi
 
     local info
-    if info="$(launchctl print "gui/$UID_/$LABEL" 2>/dev/null)"; then
+    if at_login_window; then
+        if broker_loaded; then
+            ok "broker $BROKER loaded"
+        else
+            fail "broker $BROKER is not loaded"
+            hint "openrdp install --user <NAME> --pass <PASSWORD>  (administrator password once)"
+        fi
+    elif info="$(launchctl print "gui/$UID_/$LABEL" 2>/dev/null)"; then
         local state pid
         state="$(printf '%s\n' "$info" | awk -F' = ' '/^\tstate = / { print $2; exit }')"
         pid="$(printf '%s\n' "$info" | awk -F' = ' '/^\tpid = / { print $2; exit }')"
@@ -110,6 +136,15 @@ check_agent() {
         fi
     elif [ -f "$HOME/Library/LaunchAgents/$LABEL.plist" ]; then
         fail "agent $LABEL is not loaded (no login session, or it was booted out)"
+    fi
+
+    if ! at_login_window; then
+        if broker_loaded; then
+            ok "login-window service loaded"
+        else
+            warn "login-window service is not loaded, so a logout stops RDP"
+            hint "openrdp install --user <NAME> --pass <PASSWORD> again, and enter the administrator password"
+        fi
     fi
 
     if listening "$PORT"; then
@@ -250,8 +285,9 @@ cmd_wake() {
 
 cmd_restart() {
     if ! launchctl print "gui/$UID_/$LABEL" >/dev/null 2>&1; then
-        if [ "$(console_user)" != "$(id -un)" ]; then
-            echo "nobody is logged in at the Mac: the agent can only run in a login session" >&2
+        if at_login_window; then
+            echo "nobody is logged in. Restart the login-window service with:" >&2
+            echo "  sudo launchctl kickstart -k system/$BROKER" >&2
         else
             echo "agent $LABEL is not loaded; run 'openrdp install ...'" >&2
         fi
