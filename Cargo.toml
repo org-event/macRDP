@@ -22,7 +22,9 @@ ironrdp-displaycontrol = { git = "https://github.com/Devolutions/IronRDP.git", r
 ironrdp-dvc = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.10.0" }
 ironrdp-egfx = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.5.0" }
 ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.11.0" }
-ironrdp-server = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.14.0", features = ["egfx", "helper"] }
+# default includes qoiz, which links zstd-safe decompression. The server encodes
+# with VideoToolbox and never decompresses zstd, so that code stays out.
+ironrdp-server = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.14.0", default-features = false, features = ["egfx", "helper", "rayon"] }
 ironrdp-svc = { git = "https://github.com/Devolutions/IronRDP.git", rev = "3f9a1149b3f4d5d288106d1f8c502b5f4215276b", version = "0.10.0" }
 objc2 = "0.6.5"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSImageRep", "NSBitmapImageRep"] }

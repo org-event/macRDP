@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Security
+
+- `libz-sys` is updated so its build script no longer writes the build environment into `target/`.
+- The unused QOI+zstd codec is off, so the vulnerable `zstd-safe` decompression code is not linked.
+
 ## [1.1.0] - 2026-10-31
 
 ### Added

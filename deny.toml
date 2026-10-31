@@ -8,14 +8,10 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-# All come through the pinned IronRDP revision and have no fixed version yet.
-# Revisit when IronRDP is updated.
+# No release fixes these. They are not reachable holes in this server.
 ignore = [
-    { id = "RUSTSEC-2026-0418", reason = "libz-sys: build-time only, the build script leaks env vars into its build directory" },
-    { id = "RUSTSEC-2023-0071", reason = "rsa (via picky): no fixed release exists; TLS itself runs on rustls/aws-lc" },
-    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile: unmaintained, no known vulnerability" },
-    { id = "RUSTSEC-2026-0398", reason = "zstd-safe: seekable decompression; the server only compresses" },
-    { id = "RUSTSEC-2026-0403", reason = "zstd-safe: legacy-frame streaming decompression; the server only compresses" },
+    { id = "RUSTSEC-2023-0071", reason = "rsa via picky/sspi: Marvin timing attack, still unfixed upstream. TLS private-key operations use rustls/aws-lc, not this crate" },
+    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile: archived wrapper around the same parser as rustls-pki-types; informational, no vulnerability" },
 ]
 
 [licenses]
