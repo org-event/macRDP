@@ -30,10 +30,10 @@ An open RDP server for macOS, built on [IronRDP](https://github.com/Devolutions/
 
 ```bash
 cargo build --release
-./target/release/macrdp --user me --pass secret
+./target/release/openrdp --user me --pass secret
 ```
 
-The server listens on `0.0.0.0:3389` and authenticates with NLA. The user name and password are the server's own; they are not your macOS account. The password can also come from `MACRDP_PASSWORD`. The TLS certificate is self-signed (RSA, because Windows App rejects ECDSA) and is created on first run in `~/Library/Application Support/macrdp`. Run `macrdp --help` for all options.
+The server listens on `0.0.0.0:3389` and authenticates with NLA. The user name and password are the server's own; they are not your macOS account. The password can also come from `OPENRDP_PASSWORD`. The TLS certificate is self-signed (RSA, because Windows App rejects ECDSA) and is created on first run in `~/Library/Application Support/openrdp`. Run `openrdp --help` for all options.
 
 macOS grants Screen Recording and Accessibility to the app that started the server (Terminal, Ghostty and so on), and the server has to be restarted after granting them. The server asks for both on startup, so macOS adds that app to the lists:
 
@@ -53,31 +53,33 @@ In Windows App on a Mac, set the Command key to be sent as Windows: the host the
 ## Start at login
 
 ```bash
-./target/release/macrdp install --user me --pass secret
+./target/release/openrdp install --user me --pass secret
 ```
 
-This copies the server into `~/Applications/macRDP.app` and installs the LaunchAgent `com.macrdp.server`. The server starts when you log in and restarts if it crashes. The password is stored in `~/Library/LaunchAgents/com.macrdp.server.plist` with mode 600, and the log goes to `~/Library/Logs/macrdp.log`. In this mode the permissions are granted to "macRDP" rather than to a terminal. They can only be granted at the Mac; restart the server afterwards:
+This copies the server into `~/Applications/OpenRDP.app` and installs the LaunchAgent `com.openrdp.server`. The server starts when you log in and restarts if it crashes. The password is stored in `~/Library/LaunchAgents/com.openrdp.server.plist` with mode 600, and the log goes to `~/Library/Logs/openrdp.log`. In this mode the permissions are granted to "OpenRDP" rather than to a terminal. They can only be granted at the Mac; restart the server afterwards:
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.macrdp.server
+launchctl kickstart -k gui/$(id -u)/com.openrdp.server
 ```
 
-After updating the build, run `install` again. It signs the app with a local certificate from a separate keychain in `~/Library/Application Support/macrdp`, so macOS recognises the new build as the same app and keeps the permissions. `macrdp uninstall` removes both the agent and the app.
+If macRDP is already installed, `install` stops that agent, removes `~/Applications/macRDP.app` and moves `~/Library/Application Support/macrdp`. The app's identity changes, so macOS asks for Screen Recording and Accessibility again.
+
+After updating the build, run `install` again. It signs the app with a local certificate from a separate keychain in `~/Library/Application Support/openrdp`, so macOS recognises the new build as the same app and keeps the permissions. `openrdp uninstall` removes both the agent and the app.
 
 **The server does not run at the login window.** It starts only after you log in. After a reboot with FileVault on, unlocking the disk over SSH does not log you in: connect with Screen Sharing (VNC) and log in there, for example through an SSH tunnel, `ssh -N -L 5901:127.0.0.1:5900 you@mac` and then `vnc://127.0.0.1:5901`. Another option is `sudo fdesetup authrestart` before the reboot.
 
-## Health check and wake: `macrdp-doctor`
+## Health check and wake: `openrdp-doctor`
 
-[`scripts/macrdp-doctor`](scripts/macrdp-doctor) checks everything remote access depends on and can fix the common cases. It is meant to be run over SSH on the host:
+[`scripts/openrdp-doctor`](scripts/openrdp-doctor) checks everything remote access depends on and can fix the common cases. It is meant to be run over SSH on the host:
 
 ```bash
-scripts/macrdp-doctor           # check: session, agent, port, permissions, signing, power, network
-scripts/macrdp-doctor wake      # wake the display
-scripts/macrdp-doctor restart   # restart the agent
-scripts/macrdp-doctor vpn       # bring up the WireGuard tunnel (needs a logged-in session)
+scripts/openrdp-doctor           # check: session, agent, port, permissions, signing, power, network
+scripts/openrdp-doctor wake      # wake the display
+scripts/openrdp-doctor restart   # restart the agent
+scripts/openrdp-doctor vpn       # bring up the WireGuard tunnel (needs a logged-in session)
 ```
 
-On another machine, `macrdp-doctor wol <MAC> [broadcast]` sends a Wake-on-LAN packet to a Mac that is asleep (it needs Wake for network access on the host, `pmset womp 1`).
+On another machine, `openrdp-doctor wol <MAC> [broadcast]` sends a Wake-on-LAN packet to a Mac that is asleep (it needs Wake for network access on the host, `pmset womp 1`).
 
 ## Open questions
 

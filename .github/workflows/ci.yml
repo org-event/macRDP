@@ -56,11 +56,11 @@ jobs:
       - name: Build
         run: cargo build --release --locked
       - name: Smoke test
-        run: ./target/release/macrdp --help
+        run: ./target/release/openrdp --help
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: macrdp-aarch64-apple-darwin
-          path: target/release/macrdp
+          name: openrdp-aarch64-apple-darwin
+          path: target/release/openrdp
           retention-days: 14
 
   deny:
@@ -80,4 +80,4 @@ jobs:
         with:
           persist-credentials: false
       - name: ShellCheck
-        run: shellcheck scripts/macrdp-doctor
+        run: shellcheck scripts/openrdp-doctor

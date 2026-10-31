@@ -1,23 +1,23 @@
 #!/bin/bash
-# macrdp-doctor: checks what remote access to this Mac depends on, and fixes
+# openrdp-doctor: checks what remote access to this Mac depends on, and fixes
 # the common cases. Meant to be run on the host, usually over SSH.
 #
-#   macrdp-doctor [check]          report on session, agent, port, permissions,
+#   openrdp-doctor [check]          report on session, agent, port, permissions,
 #                                  signing, power and network
-#   macrdp-doctor wake             wake the display
-#   macrdp-doctor restart          restart the macRDP agent
-#   macrdp-doctor vpn              bring up WireGuard tunnels (needs a login)
-#   macrdp-doctor wol <MAC> [BROADCAST]
+#   openrdp-doctor wake             wake the display
+#   openrdp-doctor restart          restart the OpenRDP agent
+#   openrdp-doctor vpn              bring up WireGuard tunnels (needs a login)
+#   openrdp-doctor wol <MAC> [BROADCAST]
 #                                  send Wake-on-LAN from another machine
 #
-# Needs no root. MACRDP_PORT overrides the port (default 3389).
+# Needs no root. OPENRDP_PORT overrides the port (default 3389). MACRDP_PORT still works.
 
 set -u
 
-LABEL=com.macrdp.server
-APP="$HOME/Applications/macRDP.app"
-LOG="$HOME/Library/Logs/macrdp.log"
-PORT="${MACRDP_PORT:-3389}"
+LABEL=com.openrdp.server
+APP="$HOME/Applications/OpenRDP.app"
+LOG="$HOME/Library/Logs/openrdp.log"
+PORT="${OPENRDP_PORT:-${MACRDP_PORT:-3389}}"
 UID_="$(id -u)"
 
 if [ -t 1 ]; then
@@ -55,7 +55,7 @@ check_system() {
     if [ "$arch" = arm64 ]; then
         ok "Apple Silicon ($(sysctl -n machdep.cpu.brand_string)), macOS $version"
     else
-        warn "$arch Mac, macOS $version: macRDP targets Apple Silicon for now"
+        warn "$arch Mac, macOS $version: OpenRDP targets Apple Silicon for now"
     fi
 
     local user
@@ -71,15 +71,15 @@ check_system() {
     fi
 
     if fdesetup status 2>/dev/null | grep -q "On"; then
-        ok "FileVault on (after a reboot someone has to log in before macRDP starts)"
+        ok "FileVault on (after a reboot someone has to log in before OpenRDP starts)"
     else
         ok "FileVault off"
     fi
 }
 
 check_agent() {
-    section "macRDP"
-    if [ -x "$APP/Contents/MacOS/macrdp" ]; then
+    section "OpenRDP"
+    if [ -x "$APP/Contents/MacOS/openrdp" ]; then
         ok "installed: $APP"
         local sign authority
         sign="$(codesign -dvv "$APP" 2>&1)"
@@ -88,13 +88,13 @@ check_agent() {
             ok "signed by \"$authority\": updates keep the permissions"
         elif printf '%s\n' "$sign" | grep -q 'Signature=adhoc'; then
             warn "signed ad hoc: every update asks for the permissions again"
-            hint "run 'macrdp install ...' again to set up local signing"
+            hint "run 'openrdp install ...' again to set up local signing"
         else
             fail "not signed"
         fi
     else
         warn "not installed as an agent ($APP is missing)"
-        hint "macrdp install --user <NAME> --pass <PASSWORD>"
+        hint "openrdp install --user <NAME> --pass <PASSWORD>"
     fi
 
     local info
@@ -106,7 +106,7 @@ check_agent() {
             ok "agent $LABEL running (pid $pid)"
         else
             fail "agent $LABEL is loaded but $state"
-            hint "macrdp-doctor restart; see $LOG"
+            hint "openrdp-doctor restart; see $LOG"
         fi
     elif [ -f "$HOME/Library/LaunchAgents/$LABEL.plist" ]; then
         fail "agent $LABEL is not loaded (no login session, or it was booted out)"
@@ -123,7 +123,7 @@ check_agent() {
     fi
     # Written by the server on every start.
     local perms
-    perms="$(grep 'macrdp: permissions' "$LOG" | tail -1)"
+    perms="$(grep 'openrdp: permissions' "$LOG" | tail -1)"
     if [ -z "$perms" ]; then
         warn "permissions unknown: the log has no 'permissions' line (older build?)"
     else
@@ -133,7 +133,7 @@ check_agent() {
                 ok "permission $name granted"
             else
                 fail "permission $name missing"
-                hint "grant it to \"macRDP\" at the Mac (System Settings → Privacy & Security), then: macrdp-doctor restart"
+                hint "grant it to \"OpenRDP\" at the Mac (System Settings → Privacy & Security), then: openrdp-doctor restart"
             fi
         done
     fi
@@ -153,14 +153,14 @@ check_power() {
     womp="$(pmset_value womp)"
     autorestart="$(pmset_value autorestart)"
 
-    if pmset -g assertions | grep -q 'macRDP server is running'; then
-        ok "macRDP keeps the Mac awake while it runs"
+    if pmset -g assertions | grep -q 'OpenRDP server is running'; then
+        ok "OpenRDP keeps the Mac awake while it runs"
     elif [ "$sleep" = 0 ]; then
         ok "system sleep is off"
     else
-        warn "the Mac sleeps after $sleep min and macRDP is not holding it awake"
+        warn "the Mac sleeps after $sleep min and OpenRDP is not holding it awake"
     fi
-    if pmset -g assertions | grep -q 'macRDP client is connected'; then
+    if pmset -g assertions | grep -q 'OpenRDP client is connected'; then
         ok "a client is connected; the display stays on"
     fi
 
@@ -194,11 +194,11 @@ check_network() {
 
     local fw=/usr/libexec/ApplicationFirewall/socketfilterfw
     if "$fw" --getglobalstate 2>/dev/null | grep -q enabled; then
-        if [ -x "$APP/Contents/MacOS/macrdp" ] &&
-            "$fw" --getappblocked "$APP/Contents/MacOS/macrdp" 2>/dev/null | grep -qi 'is blocked'; then
-            fail "the firewall blocks macRDP"
+        if [ -x "$APP/Contents/MacOS/openrdp" ] &&
+            "$fw" --getappblocked "$APP/Contents/MacOS/openrdp" 2>/dev/null | grep -qi 'is blocked'; then
+            fail "the firewall blocks OpenRDP"
         else
-            ok "firewall on, macRDP not blocked"
+            ok "firewall on, OpenRDP not blocked"
         fi
     else
         ok "firewall off"
@@ -217,7 +217,7 @@ check_network() {
             ok "WireGuard \"$name\" connected"
         else
             warn "WireGuard \"$name\" $status"
-            hint "macrdp-doctor vpn (needs a login session)"
+            hint "openrdp-doctor vpn (needs a login session)"
         fi
     done <<EOF
 $tunnels
@@ -225,7 +225,7 @@ EOF
 }
 
 cmd_check() {
-    printf '%smacRDP doctor%s — %s, %s\n' "$BOLD" "$RESET" "$(scutil --get ComputerName 2>/dev/null || hostname)" "$(date '+%Y-%m-%d %H:%M')"
+    printf '%sOpenRDP doctor%s — %s, %s\n' "$BOLD" "$RESET" "$(scutil --get ComputerName 2>/dev/null || hostname)" "$(date '+%Y-%m-%d %H:%M')"
     check_system
     check_agent
     check_power
@@ -253,7 +253,7 @@ cmd_restart() {
         if [ "$(console_user)" != "$(id -un)" ]; then
             echo "nobody is logged in at the Mac: the agent can only run in a login session" >&2
         else
-            echo "agent $LABEL is not loaded; run 'macrdp install ...'" >&2
+            echo "agent $LABEL is not loaded; run 'openrdp install ...'" >&2
         fi
         return 1
     fi
@@ -295,7 +295,7 @@ EOF
 cmd_wol() {
     local mac="${1:-}" broadcast="${2:-255.255.255.255}"
     if ! printf '%s' "$mac" | grep -qiE '^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$'; then
-        echo "usage: macrdp-doctor wol <MAC like aa:bb:cc:dd:ee:ff> [BROADCAST]" >&2
+        echo "usage: openrdp-doctor wol <MAC like aa:bb:cc:dd:ee:ff> [BROADCAST]" >&2
         echo "the host's MAC: networksetup -getmacaddress en0 (or en1 for Wi-Fi)" >&2
         return 2
     fi

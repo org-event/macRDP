@@ -29,9 +29,9 @@ jobs:
         run: cargo build --release --locked
       - name: Package
         run: |
-          name="macrdp-$GITHUB_REF_NAME-aarch64-apple-darwin"
+          name="openrdp-$GITHUB_REF_NAME-aarch64-apple-darwin"
           mkdir "$name"
-          cp target/release/macrdp scripts/macrdp-doctor README.md README.ru.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$name/"
+          cp target/release/openrdp scripts/openrdp-doctor README.md README.ru.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$name/"
           tar -czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
           echo "ASSET=$name" >> "$GITHUB_ENV"
@@ -41,7 +41,7 @@ jobs:
         run: |
           cat > notes.md <<'EOF'
           Apple Silicon build. The binary is not notarized: after downloading, run
-          `xattr -d com.apple.quarantine macrdp`, then `./macrdp install --user <NAME> --pass <PASSWORD>`.
+          `xattr -d com.apple.quarantine openrdp`, then `./openrdp install --user <NAME> --pass <PASSWORD>`.
           `install` signs the app with a local certificate, so later updates keep the macOS permissions.
 
           See CHANGELOG.md for the changes.

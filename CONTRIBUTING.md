@@ -40,7 +40,7 @@ Dependency licenses and advisories are checked with [cargo-deny](https://github.
 
 ## Reporting bugs
 
-Use the bug report template. Attach the relevant part of `~/Library/Logs/macrdp.log` (or the terminal output, with `RUST_LOG=macrdp=debug` if you can) and the output of `scripts/macrdp-doctor`. Remove anything private from them first.
+Use the bug report template. Attach the relevant part of `~/Library/Logs/openrdp.log` (or the terminal output, with `RUST_LOG=openrdp=debug` if you can) and the output of `scripts/openrdp-doctor`. Remove anything private from them first.
 
 ## License
 

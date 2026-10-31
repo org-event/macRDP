@@ -244,7 +244,7 @@ impl Shared {
             "keeping the virtual display for a reconnect"
         );
         let spawned = std::thread::Builder::new()
-            .name("macrdp-keep-display".into())
+            .name("openrdp-keep-display".into())
             .spawn(move || {
                 std::thread::sleep(delay);
                 // Under the display lock: a client reusing the display bumps the
@@ -422,12 +422,12 @@ impl Session {
             suppressed: ctx.display_suppressed,
         };
         let thread = std::thread::Builder::new()
-            .name("macrdp-pipeline".into())
+            .name("openrdp-pipeline".into())
             .spawn(move || pipeline.run())
             .context("spawn pipeline thread")?;
         let (pointer_tx, pointer_updates) = tokio::sync::mpsc::unbounded_channel();
         let cursor_thread = std::thread::Builder::new()
-            .name("macrdp-cursor".into())
+            .name("openrdp-cursor".into())
             .spawn({
                 let shared = Arc::clone(&shared);
                 let stop = Arc::clone(&stop);

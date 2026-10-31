@@ -1,9 +1,9 @@
-//! A local code signing identity for macRDP.app.
+//! A local code signing identity for OpenRDP.app.
 //!
 //! macOS ties Screen Recording and Accessibility grants to an app's designated
 //! requirement. An ad hoc signature makes that the hash of one build, so every
 //! update lost the grants. Signed with a fixed self-signed certificate the
-//! requirement becomes "identifier com.macrdp.server and this certificate",
+//! requirement becomes "identifier com.openrdp.server and this certificate",
 //! which every build meets. No trust setting is needed for that.
 //!
 //! The certificate lives in its own keychain with a random password kept next
@@ -17,6 +17,8 @@ use tracing::info;
 
 use crate::service::{run, write_private};
 
+/// The certificate's common name. Unchanged from macRDP so a keychain moved by
+/// `install` still matches what `codesign` looks up.
 const NAME: &str = "macRDP Local Signing";
 
 pub struct Identity {

@@ -16,9 +16,14 @@ pub fn identity(cert: Option<&Path>, key: Option<&Path>) -> anyhow::Result<TlsId
         .with_context(|| format!("load TLS identity {}", cert.display()))
 }
 
-fn self_signed() -> anyhow::Result<(PathBuf, PathBuf)> {
+/// `~/Library/Application Support/openrdp`: the TLS identity and the signing keychain.
+pub fn support_dir() -> anyhow::Result<PathBuf> {
     let home = std::env::var_os("HOME").context("HOME is not set")?;
-    let dir = Path::new(&home).join("Library/Application Support/macrdp");
+    Ok(PathBuf::from(home).join("Library/Application Support/openrdp"))
+}
+
+fn self_signed() -> anyhow::Result<(PathBuf, PathBuf)> {
+    let dir = support_dir()?;
     let cert = dir.join("cert.pem");
     let key = dir.join("key.pem");
     if cert.exists() && key.exists() {
@@ -57,5 +62,5 @@ fn hostname() -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| format!("{}.local", s.trim()))
         .filter(|s| s.len() > ".local".len())
-        .unwrap_or_else(|| "macrdp".into())
+        .unwrap_or_else(|| "openrdp".into())
 }

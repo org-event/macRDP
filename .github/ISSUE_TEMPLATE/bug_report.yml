@@ -41,18 +41,18 @@ body:
     attributes:
       label: How the server runs
       options:
-        - LaunchAgent (macrdp install)
+        - LaunchAgent (openrdp install)
         - From a terminal
     validations:
       required: true
   - type: textarea
     id: doctor
     attributes:
-      label: Output of scripts/macrdp-doctor
+      label: Output of scripts/openrdp-doctor
       render: text
   - type: textarea
     id: log
     attributes:
       label: Server log
-      description: The relevant part of ~/Library/Logs/macrdp.log, or terminal output (RUST_LOG=macrdp=debug if you can).
+      description: The relevant part of ~/Library/Logs/openrdp.log, or terminal output (RUST_LOG=openrdp=debug if you can).
       render: text

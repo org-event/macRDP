@@ -1,4 +1,4 @@
-//! macRDP: an RDP server for macOS built on IronRDP.
+//! OpenRDP: an RDP server for macOS built on IronRDP.
 
 mod capture;
 mod clipboard;
@@ -24,13 +24,13 @@ use crate::display::{DisplayConfig, GfxFactory, MacDisplay, Screen, ScreenState,
 use crate::input::MacInput;
 
 const HELP: &str = "\
-macrdp — RDP server for macOS
+openrdp — RDP server for macOS
 
 USAGE:
-  macrdp --user <NAME> --pass <PASSWORD> [OPTIONS]
-  macrdp install --user <NAME> --pass <PASSWORD> [OPTIONS]
-                      run at login as ~/Applications/macRDP.app (LaunchAgent)
-  macrdp uninstall    remove it
+  openrdp --user <NAME> --pass <PASSWORD> [OPTIONS]
+  openrdp install --user <NAME> --pass <PASSWORD> [OPTIONS]
+                      run at login as ~/Applications/OpenRDP.app (LaunchAgent)
+  openrdp uninstall    remove it
 
 OPTIONS:
   --bind <ADDR>       listen address [default: 0.0.0.0:3389]
@@ -51,9 +51,10 @@ OPTIONS:
   --test-pattern      send a synthetic picture instead of the screen
   --cert <PEM> --key <PEM>
                       TLS identity [default: self-signed, kept in
-                      ~/Library/Application Support/macrdp]
+                      ~/Library/Application Support/openrdp]
 
-Password may also come from MACRDP_PASSWORD. Logs: RUST_LOG=macrdp=debug.
+Password may also come from OPENRDP_PASSWORD (MACRDP_PASSWORD still works).
+Logs: RUST_LOG=openrdp=debug.
 ";
 
 struct Args {
@@ -99,9 +100,9 @@ fn parse_args(args: Vec<std::ffi::OsString>) -> anyhow::Result<Option<Args>> {
     };
     let pass = match args.opt_value_from_str("--pass")? {
         Some(pass) => pass,
-        None => {
-            std::env::var("MACRDP_PASSWORD").context("--pass or MACRDP_PASSWORD is required")?
-        }
+        None => std::env::var("OPENRDP_PASSWORD")
+            .or_else(|_| std::env::var("MACRDP_PASSWORD"))
+            .context("--pass, OPENRDP_PASSWORD or MACRDP_PASSWORD is required")?,
     };
     let parsed = Args {
         bind: args
@@ -158,7 +159,7 @@ async fn main() -> anyhow::Result<()> {
         .with_ansi(std::io::stdout().is_terminal())
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "macrdp=info,warn".into()),
+                .unwrap_or_else(|_| "openrdp=info,warn".into()),
         )
         .init();
 
@@ -230,7 +231,7 @@ unsafe extern "C" {
     -> bool;
 }
 
-/// Logs both grants on every start (`macrdp-doctor` reads that line) and asks
+/// Logs both grants on every start (`openrdp-doctor` reads that line) and asks
 /// for the missing ones.
 fn check_permissions() {
     let screen_recording = objc2_core_graphics::CGPreflightScreenCaptureAccess();

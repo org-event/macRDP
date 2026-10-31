@@ -37,7 +37,7 @@ pub fn wake_display() {
     // SAFETY: valid CF string and out-pointer.
     let status = unsafe {
         IOPMAssertionDeclareUserActivity(
-            &CFString::from_str("macRDP client connecting"),
+            &CFString::from_str("OpenRDP client connecting"),
             USER_ACTIVE_LOCAL,
             &mut id,
         )
@@ -69,12 +69,12 @@ pub struct Awake {
 impl Awake {
     /// Keeps the system from idle sleep, so the server stays reachable.
     pub fn system() -> Option<Self> {
-        Self::new("PreventUserIdleSystemSleep", "macRDP server is running")
+        Self::new("PreventUserIdleSystemSleep", "OpenRDP server is running")
     }
 
     /// Keeps the display from idle sleep, so a remote session does not go dark.
     pub fn display() -> Option<Self> {
-        Self::new("PreventUserIdleDisplaySleep", "macRDP client is connected")
+        Self::new("PreventUserIdleDisplaySleep", "OpenRDP client is connected")
     }
 
     fn new(kind: &str, reason: &str) -> Option<Self> {

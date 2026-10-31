@@ -93,7 +93,7 @@ impl Shared {
     fn in_background(self: &Arc<Self>, work: impl FnOnce(&Self) + Send + 'static) {
         let shared = Arc::clone(self);
         let spawned = std::thread::Builder::new()
-            .name("macrdp-pasteboard".into())
+            .name("openrdp-pasteboard".into())
             .spawn(move || work(&shared));
         if let Err(err) = spawned {
             warn!(%err, "cannot start pasteboard work");
@@ -142,7 +142,7 @@ impl MacClipboard {
         }
         let shared = Arc::clone(&self.shared);
         self.watcher = std::thread::Builder::new()
-            .name("macrdp-clipboard".into())
+            .name("openrdp-clipboard".into())
             .spawn(move || watch(&shared))
             .map_err(|err| warn!(%err, "cannot watch the clipboard"))
             .ok();

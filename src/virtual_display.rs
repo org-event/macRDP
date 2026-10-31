@@ -115,12 +115,12 @@ impl VirtualDisplay {
         let descriptor_class = class(c"CGVirtualDisplayDescriptor")?;
         let display_class = class(c"CGVirtualDisplay")?;
 
-        let queue = DispatchQueue::new("macrdp.virtual-display", None);
+        let queue = DispatchQueue::new("openrdp.virtual-display", None);
         // SAFETY: selectors and argument types follow the CGVirtualDisplay headers
         // as shipped in CoreGraphics.
         let display = unsafe {
             let descriptor: Retained<AnyObject> = msg_send![descriptor_class, new];
-            let name = objc2_foundation::NSString::from_str("macRDP");
+            let name = objc2_foundation::NSString::from_str("OpenRDP");
             let _: () = msg_send![&*descriptor, setName: &*name];
             let _: () = msg_send![&*descriptor, setMaxPixelsWide: MAX_PIXELS.0];
             let _: () = msg_send![&*descriptor, setMaxPixelsHigh: MAX_PIXELS.1];

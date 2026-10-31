@@ -190,7 +190,7 @@ impl Capture {
             config.setQueueDepth(5);
 
             let output = CaptureOutput::new(slot);
-            let queue = DispatchQueue::new("macrdp.capture", None);
+            let queue = DispatchQueue::new("openrdp.capture", None);
             let stream = SCStream::initWithFilter_configuration_delegate(
                 SCStream::alloc(),
                 &filter,
@@ -305,7 +305,7 @@ impl TestPattern {
         let stop_flag = Arc::clone(&stop);
         let interval = Duration::from_secs(1) / u32::try_from(fps.max(1))?;
         let thread = std::thread::Builder::new()
-            .name("macrdp-pattern".into())
+            .name("openrdp-pattern".into())
             .spawn(move || {
                 let mut tick = 0usize;
                 while !stop_flag.load(Ordering::Relaxed) {
