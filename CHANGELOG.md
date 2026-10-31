@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-31
+
 ### Added
 
 - The running server checks GitHub for a newer release, asks with a dialog, and installs it after confirmation. `--update auto` installs without asking.
@@ -33,5 +35,6 @@ First release.
 - CI on Apple Silicon runners, release builds, Dependabot and cargo-deny.
 - Licenses (MIT OR Apache-2.0), English README, contributing guide, security policy.
 
-[Unreleased]: https://github.com/org-event/OpenRDP/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/org-event/OpenRDP/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/org-event/OpenRDP/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/org-event/OpenRDP/releases/tag/v1.0.0
