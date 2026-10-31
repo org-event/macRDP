@@ -33,7 +33,7 @@ body:
     id: version
     attributes:
       label: OpenRDP version or commit
-      placeholder: v0.1.0 or 3b0b5a2
+      placeholder: v1.0.0 or 3b0b5a2
     validations:
       required: true
   - type: dropdown
