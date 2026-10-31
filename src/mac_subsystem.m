@@ -1,5 +1,5 @@
 /*
- * macRDP: macOS platform subsystem for the FreeRDP shadow server.
+ * OpenRDP: macOS platform subsystem for the FreeRDP shadow server.
  *
  * Capture:  ScreenCaptureKit, main display, logical (point) resolution, dirty rects.
  * Input:    CGEventPost with explicit modifier flags (needs Accessibility permission).
@@ -23,7 +23,7 @@
 
 #include "mac_subsystem.h"
 
-#define TAG "com.macrdp.subsystem"
+#define TAG "com.openrdp.subsystem"
 
 /* RDP pointer updates are limited to 384x384 (large pointer); keep to the common 96. */
 #define MAX_CURSOR_SIZE 96
@@ -181,7 +181,7 @@ static void copy_frame(MacRdpSubsystem* mac, CVPixelBufferRef pixels, NSArray* d
 	config.queueDepth = 4;
 	config.colorSpaceName = kCGColorSpaceSRGB;
 
-	self.queue = dispatch_queue_create("macrdp.capture", DISPATCH_QUEUE_SERIAL);
+	self.queue = dispatch_queue_create("openrdp.capture", DISPATCH_QUEUE_SERIAL);
 	self.stream = [[SCStream alloc] initWithFilter:filter configuration:config delegate:self];
 
 	if (![self.stream addStreamOutput:self

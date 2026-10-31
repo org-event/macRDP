@@ -5,10 +5,10 @@
 //! a LaunchAgent starts it in the user's session and restarts it if it exits.
 //! The password goes into the agent's plist, readable only by the user.
 //!
-//! An existing macRDP install is retired here: its agent is booted out, the app
-//! and plist are removed, and `~/Library/Application Support/macrdp` (the TLS
-//! identity and the signing keychain) moves to `openrdp`. The bundle id changes,
-//! so macOS asks for the permissions again.
+//! A previous install under the old names is deleted here: the agent, the app,
+//! the plist, the log and `~/Library/Application Support/macrdp`. Nothing is
+//! carried over. The new app is a different identity, so macOS asks for the
+//! permissions again.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -55,7 +55,7 @@ fn paths() -> anyhow::Result<Paths> {
 pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
     let paths = paths()?;
     let removed = bootout(OLD_LABEL);
-    let migrated = removed || migrate_files(&home_dir()?, &paths.support)?;
+    let removed = removed || remove_legacy(&home_dir()?)?;
     stop();
 
     let macos = paths.binary.parent().expect("inside the bundle");
@@ -82,11 +82,11 @@ pub fn install(server_args: &[String], password: &str) -> anyhow::Result<()> {
 
     println!("Installed {} and started it at login.", paths.app.display());
     println!("Log: {}", paths.log.display());
-    if migrated {
+    if removed {
         println!(
-            "Replaced the macRDP agent and app. macOS treats \"{BUNDLE_NAME}\" as a different \
-             app, so Screen Recording and Accessibility have to be granted again at the Mac \
-             (System Settings cannot be changed remotely). Then restart it:\n  \
+            "Removed the previous install. macOS treats \"{BUNDLE_NAME}\" as a new app, so \
+             Screen Recording and Accessibility have to be granted again at the Mac (System \
+             Settings cannot be changed remotely). Then restart it:\n  \
              launchctl kickstart -k {}/{LABEL}",
             domain()
         );
@@ -150,39 +150,23 @@ fn bootout(label: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Removes a macRDP app and LaunchAgent, and moves its support directory onto
-/// `new_support` when that directory is not already there.
-/// `true` when an old app or plist was removed.
-fn migrate_files(home: &Path, new_support: &Path) -> anyhow::Result<bool> {
+/// Deletes the previous install outright: app, agent plist, log and support
+/// directory. `true` when any of it was there.
+fn remove_legacy(home: &Path) -> anyhow::Result<bool> {
     let old_app = home.join("Applications/macRDP.app");
     let old_plist = home.join(format!("Library/LaunchAgents/{OLD_LABEL}.plist"));
     let old_support = home.join("Library/Application Support/macrdp");
-    let present = old_app.exists() || old_plist.exists();
-    if old_plist.exists() {
-        std::fs::remove_file(&old_plist)
-            .with_context(|| format!("remove {}", old_plist.display()))?;
+    let old_log = home.join("Library/Logs/macrdp.log");
+    let present =
+        old_app.exists() || old_plist.exists() || old_support.exists() || old_log.exists();
+    for path in [&old_plist, &old_log] {
+        if path.exists() {
+            std::fs::remove_file(path).with_context(|| format!("remove {}", path.display()))?;
+        }
     }
-    if old_app.exists() {
-        std::fs::remove_dir_all(&old_app)
-            .with_context(|| format!("remove {}", old_app.display()))?;
-    }
-    if old_support.exists() {
-        if new_support.exists() {
-            eprintln!(
-                "warning: leaving {} in place; {} already exists",
-                old_support.display(),
-                new_support.display()
-            );
-        } else if let Some(parent) = new_support.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("create {}", parent.display()))?;
-            std::fs::rename(&old_support, new_support).with_context(|| {
-                format!(
-                    "move {} to {}",
-                    old_support.display(),
-                    new_support.display()
-                )
-            })?;
+    for path in [&old_app, &old_support] {
+        if path.exists() {
+            std::fs::remove_dir_all(path).with_context(|| format!("remove {}", path.display()))?;
         }
     }
     Ok(present)
@@ -310,8 +294,8 @@ mod tests {
     }
 
     #[test]
-    fn migrate_moves_support_and_removes_old_app() {
-        let home = std::env::temp_dir().join(format!("openrdp-migrate-{}", std::process::id()));
+    fn remove_legacy_deletes_the_previous_install() {
+        let home = std::env::temp_dir().join(format!("openrdp-legacy-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         let old_bin = home.join("Applications/macRDP.app/Contents/MacOS");
         std::fs::create_dir_all(&old_bin).unwrap();
@@ -322,16 +306,16 @@ mod tests {
         let old_support = home.join("Library/Application Support/macrdp");
         std::fs::create_dir_all(&old_support).unwrap();
         std::fs::write(old_support.join("cert.pem"), b"cert").unwrap();
-        let new_support = home.join("Library/Application Support/openrdp");
+        let old_log = home.join("Library/Logs/macrdp.log");
+        std::fs::create_dir_all(old_log.parent().unwrap()).unwrap();
+        std::fs::write(&old_log, b"log").unwrap();
 
-        assert!(migrate_files(&home, &new_support).unwrap());
+        assert!(remove_legacy(&home).unwrap());
         assert!(!home.join("Applications/macRDP.app").exists());
         assert!(!old_plist.exists());
-        assert_eq!(
-            std::fs::read(new_support.join("cert.pem")).unwrap(),
-            b"cert"
-        );
-        assert!(!migrate_files(&home, &new_support).unwrap());
+        assert!(!old_support.exists());
+        assert!(!old_log.exists());
+        assert!(!remove_legacy(&home).unwrap());
 
         let _ = std::fs::remove_dir_all(&home);
     }

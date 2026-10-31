@@ -53,8 +53,7 @@ OPTIONS:
                       TLS identity [default: self-signed, kept in
                       ~/Library/Application Support/openrdp]
 
-Password may also come from OPENRDP_PASSWORD (MACRDP_PASSWORD still works).
-Logs: RUST_LOG=openrdp=debug.
+Password may also come from OPENRDP_PASSWORD. Logs: RUST_LOG=openrdp=debug.
 ";
 
 struct Args {
@@ -100,9 +99,9 @@ fn parse_args(args: Vec<std::ffi::OsString>) -> anyhow::Result<Option<Args>> {
     };
     let pass = match args.opt_value_from_str("--pass")? {
         Some(pass) => pass,
-        None => std::env::var("OPENRDP_PASSWORD")
-            .or_else(|_| std::env::var("MACRDP_PASSWORD"))
-            .context("--pass, OPENRDP_PASSWORD or MACRDP_PASSWORD is required")?,
+        None => {
+            std::env::var("OPENRDP_PASSWORD").context("--pass or OPENRDP_PASSWORD is required")?
+        }
     };
     let parsed = Args {
         bind: args

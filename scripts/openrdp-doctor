@@ -10,14 +10,14 @@
 #   openrdp-doctor wol <MAC> [BROADCAST]
 #                                  send Wake-on-LAN from another machine
 #
-# Needs no root. OPENRDP_PORT overrides the port (default 3389). MACRDP_PORT still works.
+# Needs no root. OPENRDP_PORT overrides the port (default 3389).
 
 set -u
 
 LABEL=com.openrdp.server
 APP="$HOME/Applications/OpenRDP.app"
 LOG="$HOME/Library/Logs/openrdp.log"
-PORT="${OPENRDP_PORT:-${MACRDP_PORT:-3389}}"
+PORT="${OPENRDP_PORT:-3389}"
 UID_="$(id -u)"
 
 if [ -t 1 ]; then

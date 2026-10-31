@@ -1,4 +1,4 @@
-/* macRDP: macOS platform subsystem for the FreeRDP shadow server. */
+/* OpenRDP: macOS platform subsystem for the FreeRDP shadow server. */
 #pragma once
 
 #include <freerdp/server/shadow.h>

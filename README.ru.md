@@ -46,7 +46,7 @@ cargo build --release
 launchctl kickstart -k gui/$(id -u)/com.openrdp.server
 ```
 
-Если macRDP уже установлен, `install` останавливает тот агент, удаляет `~/Applications/macRDP.app` и переносит `~/Library/Application Support/macrdp`. Имя приложения меняется, поэтому macOS снова спрашивает Screen Recording и Accessibility.
+Если на диске ещё лежит старая установка, `install` удаляет тот агент, `~/Applications/macRDP.app`, его лог и `~/Library/Application Support/macrdp`. Ничего не переносится, поэтому macOS снова спрашивает Screen Recording и Accessibility.
 
 После обновления сборки снова выполните `install`. Он подписывает приложение локальным сертификатом из отдельной связки ключей в `~/Library/Application Support/openrdp` (`signing.keychain-db`, пароль в `signing.password`), поэтому macOS узнаёт новую сборку как то же приложение, и права сохраняются. Если подписать так не получилось, `install` предупредит и подпишет ad hoc, и тогда права придётся выдавать заново. `openrdp uninstall` удаляет и агент, и приложение.
 

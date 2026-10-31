@@ -62,7 +62,7 @@ This copies the server into `~/Applications/OpenRDP.app` and installs the Launch
 launchctl kickstart -k gui/$(id -u)/com.openrdp.server
 ```
 
-If macRDP is already installed, `install` stops that agent, removes `~/Applications/macRDP.app` and moves `~/Library/Application Support/macrdp`. The app's identity changes, so macOS asks for Screen Recording and Accessibility again.
+If an older install is still on disk, `install` removes that agent, `~/Applications/macRDP.app`, its log and `~/Library/Application Support/macrdp`. Nothing is carried over, so macOS asks for Screen Recording and Accessibility again.
 
 After updating the build, run `install` again. It signs the app with a local certificate from a separate keychain in `~/Library/Application Support/openrdp`, so macOS recognises the new build as the same app and keeps the permissions. `openrdp uninstall` removes both the agent and the app.
 

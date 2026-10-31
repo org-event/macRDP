@@ -17,9 +17,7 @@ use tracing::info;
 
 use crate::service::{run, write_private};
 
-/// The certificate's common name. Unchanged from macRDP so a keychain moved by
-/// `install` still matches what `codesign` looks up.
-const NAME: &str = "macRDP Local Signing";
+const NAME: &str = "OpenRDP Local Signing";
 
 pub struct Identity {
     keychain: PathBuf,
