@@ -9,10 +9,6 @@
 
 An open RDP server for macOS, built on [IronRDP](https://github.com/Devolutions/IronRDP). Linux is planned. It lets you work on a remote Mac all day from any RDP client with GFX/H.264 support: Windows App (macOS, Windows, iOS), FreeRDP or Remmina (Linux).
 
-> **Status: early, but usable.** The author uses it daily on a Mac mini (M2 Pro, macOS 27) from a MacBook over WireGuard. Expect rough edges; see [open questions](#open-questions). Apple Silicon only for now.
-
-> The project was called macRDP, and the binary, app and agent still are: `macrdp`, `macRDP.app`, `com.macrdp.server`. They will be renamed in a later release; renaming them makes macOS ask for the permissions again.
-
 ## How it works
 
 - **Capture**: ScreenCaptureKit, straight to NV12 full-range BT.709 (the AVC color space of MS-RDPEGFX), with no conversion.

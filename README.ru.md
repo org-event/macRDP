@@ -6,10 +6,6 @@
 
 Открытый RDP-сервер для macOS на [IronRDP](https://github.com/Devolutions/IronRDP). Клиент — любой RDP-клиент с GFX/H.264: Windows App (Mac, Windows, iOS), FreeRDP/Remmina (Linux).
 
-> **Состояние: ранний, но рабочий.** Автор пользуется им каждый день: Mac mini (M2 Pro, macOS 27), клиент — MacBook через WireGuard. Открытые вопросы — в [docs/plan.md](docs/plan.md). Пока только Apple Silicon, позже — Linux.
-
-> Раньше проект назывался macRDP, и бинарник, приложение и агент пока называются так же: `macrdp`, `macRDP.app`, `com.macrdp.server`. Их переименуем в одном из следующих релизов — после этого macOS заново спросит права.
-
 Как устроено:
 
 - захват — ScreenCaptureKit, сразу NV12 full-range BT.709 (цветовое пространство AVC в MS-RDPEGFX), без конвертации;
